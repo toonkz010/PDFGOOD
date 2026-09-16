@@ -138,6 +138,17 @@
     .preview-hint{font-size:11px;opacity:.65;margin-left:auto;margin-right:6px}
     .page-item.previewable{cursor:zoom-in}
 
+  
+    .preview-zoom{
+      display:flex;align-items:center;justify-content:center;gap:7px;
+      padding:8px 10px;background:#111827;border-top:1px solid rgba(255,255,255,.08)
+    }
+    .preview-zoom .btn{min-width:38px}
+    .preview-zoom-value{
+      min-width:66px;text-align:center;color:#fff;font-size:12px;
+      border:1px solid rgba(255,255,255,.18);border-radius:9px;padding:5px 8px
+    }
+
   </style>
 </head>
 
@@ -245,6 +256,12 @@
         <div id="previewIndicator" class="preview-page-indicator">1 / 1</div>
         <button id="previewNextBtn" class="btn btn-sm btn-outline-light preview-nav">›</button>
       </div>
+      <div class="preview-zoom">
+        <button id="zoomOutBtn" class="btn btn-sm btn-outline-light">−</button>
+        <button id="zoomResetBtn" class="btn btn-sm btn-outline-light">100%</button>
+        <button id="zoomInBtn" class="btn btn-sm btn-outline-light">＋</button>
+        <div id="zoomValue" class="preview-zoom-value">100%</div>
+      </div>
     </div>
   </div>
 
@@ -261,7 +278,8 @@
     open: false,
     queueIndex: 0,
     pdfjs: null,
-    task: null
+    task: null,
+    zoom: 1
   };
 
   const el = {
@@ -532,6 +550,7 @@
   }
 
   function showPreview() {
+    preview.zoom = 1;
     preview.open = true;
     document.getElementById('previewModal').classList.add('show');
     document.getElementById('previewModal').setAttribute('aria-hidden', 'false');
@@ -576,17 +595,25 @@
       const baseViewport = page.getViewport({ scale: 1 });
       const maxWidth = Math.max(320, container.clientWidth - 30);
       const maxHeight = Math.max(320, container.clientHeight - 30);
-      const scale = Math.min(
+
+      // Fit-to-window scale, then apply user zoom.
+      const fitScale = Math.min(
         maxWidth / baseViewport.width,
         maxHeight / baseViewport.height
       );
-      const viewport = page.getViewport({ scale: Math.max(0.5, scale) });
+
+      const finalScale = Math.max(0.25, Math.min(4, fitScale * preview.zoom));
+      const viewport = page.getViewport({ scale: finalScale });
 
       const dpr = window.devicePixelRatio || 1;
       canvas.width = Math.floor(viewport.width * dpr);
       canvas.height = Math.floor(viewport.height * dpr);
       canvas.style.width = Math.floor(viewport.width) + 'px';
       canvas.style.height = Math.floor(viewport.height) + 'px';
+
+      // When zoomed, allow scrolling rather than shrinking back down.
+      canvas.style.maxWidth = 'none';
+      canvas.style.maxHeight = 'none';
 
       await page.render({
         canvasContext: ctx,
@@ -599,11 +626,26 @@
         preview.queueIndex >= 0
           ? `${preview.queueIndex + 1} / ${realCount}`
           : `ตัวอย่างหน้า ${target.pageIndex + 1}`;
+
+      const percent = Math.round(preview.zoom * 100);
+      document.getElementById('zoomValue').textContent = `${percent}%`;
+
     } catch (err) {
       console.error(err);
       alert('เปิดตัวอย่างหน้า PDF ไม่สำเร็จ\n\n' + (err.message || err));
     }
   }
+
+  function changeZoom(delta) {
+    preview.zoom = Math.max(0.25, Math.min(4, Math.round((preview.zoom + delta) * 100) / 100));
+    renderPreviewPage();
+  }
+
+  function resetZoom() {
+    preview.zoom = 1;
+    renderPreviewPage();
+  }
+
 
   function previewMove(delta) {
     if (!state.queue.length) return;
@@ -731,6 +773,23 @@
   el.exportBtn.addEventListener('click', exportPdf);
 
 
+  document.getElementById('zoomInBtn').addEventListener('click', () => changeZoom(0.25));
+  document.getElementById('zoomOutBtn').addEventListener('click', () => changeZoom(-0.25));
+  document.getElementById('zoomResetBtn').addEventListener('click', resetZoom);
+
+
+  document.querySelector('.preview-body').addEventListener('wheel', (e) => {
+    if (!preview.open) return;
+    if (e.ctrlKey) {
+      e.preventDefault();
+      changeZoom(e.deltaY < 0 ? 0.1 : -0.1);
+    }
+  }, { passive: false });
+
+  document.getElementById('zoomInBtn').addEventListener('click', () => changeZoom(0.25));
+  document.getElementById('zoomOutBtn').addEventListener('click', () => changeZoom(-0.25));
+  document.getElementById('zoomResetBtn').addEventListener('click', resetZoom);
+
   document.getElementById('previewCloseBtn').addEventListener('click', closePreview);
   document.getElementById('previewPrevBtn').addEventListener('click', () => previewMove(-1));
   document.getElementById('previewNextBtn').addEventListener('click', () => previewMove(1));
@@ -744,6 +803,9 @@
     if (e.key === 'Escape') closePreview();
     if (e.key === 'ArrowLeft') previewMove(-1);
     if (e.key === 'ArrowRight') previewMove(1);
+    if (e.key === '+' || e.key === '=') changeZoom(0.25);
+    if (e.key === '-') changeZoom(-0.25);
+    if (e.key === '0') resetZoom();
   });
 
   window.addEventListener('resize', () => {
