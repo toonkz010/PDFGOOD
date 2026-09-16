@@ -10,6 +10,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs" type="module"></script>
 
   <style>
     :root{
@@ -121,6 +122,22 @@
     @media(max-width:992px){
       .summary{position:static}
     }
+  
+    .preview-modal{position:fixed;inset:0;background:rgba(9,16,33,.78);z-index:10000;display:none;align-items:center;justify-content:center;padding:18px}
+    .preview-modal.show{display:flex}
+    .preview-panel{width:min(1100px,96vw);height:min(92vh,900px);background:#111827;border-radius:18px;box-shadow:0 25px 70px rgba(0,0,0,.35);display:flex;flex-direction:column;overflow:hidden}
+    .preview-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 16px;background:#182033;color:#fff}
+    .preview-title{min-width:0}
+    .preview-title-main{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .preview-title-sub{font-size:12px;opacity:.7}
+    .preview-body{flex:1;display:flex;align-items:center;justify-content:center;overflow:auto;padding:14px;background:#0b1020}
+    #previewCanvas{max-width:100%;max-height:100%;background:#fff;box-shadow:0 8px 28px rgba(0,0,0,.35)}
+    .preview-footer{display:flex;align-items:center;justify-content:center;gap:10px;padding:10px;background:#182033;color:#fff}
+    .preview-nav{min-width:42px}
+    .preview-page-indicator{min-width:115px;text-align:center;font-size:13px}
+    .preview-hint{font-size:11px;opacity:.65;margin-left:auto;margin-right:6px}
+    .page-item.previewable{cursor:zoom-in}
+
   </style>
 </head>
 
@@ -207,12 +224,44 @@
   </div>
 </div>
 
+
+  <div id="previewModal" class="preview-modal" aria-hidden="true">
+    <div class="preview-panel">
+      <div class="preview-head">
+        <div class="preview-title">
+          <div id="previewTitleMain" class="preview-title-main">ตัวอย่างเอกสาร</div>
+          <div id="previewTitleSub" class="preview-title-sub"></div>
+        </div>
+        <div class="d-flex align-items-center gap-2">
+          <div class="preview-hint">ดับเบิลคลิกเพื่อขยาย/ย่อในเบราว์เซอร์</div>
+          <button id="previewCloseBtn" class="btn btn-sm btn-outline-light">ปิด</button>
+        </div>
+      </div>
+      <div class="preview-body">
+        <canvas id="previewCanvas"></canvas>
+      </div>
+      <div class="preview-footer">
+        <button id="previewPrevBtn" class="btn btn-sm btn-outline-light preview-nav">‹</button>
+        <div id="previewIndicator" class="preview-page-indicator">1 / 1</div>
+        <button id="previewNextBtn" class="btn btn-sm btn-outline-light preview-nav">›</button>
+      </div>
+    </div>
+  </div>
+
 <script>
   const { PDFDocument } = PDFLib;
 
   const state = {
-    files: [], // { id, file, name, size, pdfDoc, pageCount, selected:Set }
+    files: [], // { id, file, name, size, bytes, pdfDoc, pageCount, selected:Set }
     queue: []  // { fileId, pageIndex }
+  };
+
+
+  const preview = {
+    open: false,
+    queueIndex: 0,
+    pdfjs: null,
+    task: null
   };
 
   const el = {
@@ -270,6 +319,7 @@
           file,
           name: file.name,
           size: file.size,
+          bytes,
           pdfDoc,
           pageCount: pdfDoc.getPageCount(),
           selected: new Set()
@@ -350,18 +400,22 @@
 
       for (let i = 0; i < file.pageCount; i++) {
         const item = document.createElement('div');
-        item.className = 'page-item' + (isSelected(file.id, i) ? ' selected' : '');
+        item.className = 'page-item previewable' + (isSelected(file.id, i) ? ' selected' : '');
         item.innerHTML = `
           <input class="page-check" type="checkbox" ${isSelected(file.id, i) ? 'checked' : ''}>
           <div class="page-number">${i + 1}</div>
-          <div class="page-caption">หน้า ${i + 1}</div>
+          <div class="page-caption">หน้า ${i + 1} • คลิกเพื่อดู</div>
         `;
         item.onclick = (e) => {
           if (e.target.matches('input')) {
             togglePage(file.id, i);
           } else {
-            togglePage(file.id, i);
+            openPreviewForPage(file.id, i);
           }
+        };
+        item.ondblclick = (e) => {
+          e.preventDefault();
+          openPreviewForPage(file.id, i);
         };
         pageGrid.appendChild(item);
       }
@@ -446,6 +500,128 @@
     state.queue = [];
     render();
   }
+
+
+  // ---------- Preview ----------
+  let pdfjsModulePromise = null;
+
+  async function getPdfJs() {
+    if (!pdfjsModulePromise) {
+      pdfjsModulePromise = import('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs');
+    }
+    const mod = await pdfjsModulePromise;
+    mod.GlobalWorkerOptions.workerSrc =
+      'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.mjs';
+    return mod;
+  }
+
+  function openPreviewForPage(fileId, pageIndex) {
+    const queueIndex = state.queue.findIndex(q =>
+      q.fileId === fileId && q.pageIndex === pageIndex
+    );
+
+    // ถ้าหน้านี้ยังไม่ได้เลือก ให้ดูตัวอย่างได้ก่อนโดยสร้างคิวชั่วคราวตำแหน่งแรก
+    if (queueIndex >= 0) {
+      preview.queueIndex = queueIndex;
+    } else {
+      // แสดงหน้านี้ทันที โดยไม่เพิ่มเข้า queue
+      preview.queueIndex = -1;
+      preview.temp = { fileId, pageIndex };
+    }
+    showPreview();
+  }
+
+  function showPreview() {
+    preview.open = true;
+    document.getElementById('previewModal').classList.add('show');
+    document.getElementById('previewModal').setAttribute('aria-hidden', 'false');
+    renderPreviewPage();
+  }
+
+  function closePreview() {
+    preview.open = false;
+    document.getElementById('previewModal').classList.remove('show');
+    document.getElementById('previewModal').setAttribute('aria-hidden', 'true');
+  }
+
+  function getPreviewTarget() {
+    if (preview.queueIndex >= 0 && state.queue[preview.queueIndex]) {
+      return state.queue[preview.queueIndex];
+    }
+    return preview.temp || null;
+  }
+
+  async function renderPreviewPage() {
+    const target = getPreviewTarget();
+    if (!target) return;
+
+    const file = state.files.find(f => f.id === target.fileId);
+    if (!file) return;
+
+    const canvas = document.getElementById('previewCanvas');
+    const ctx = canvas.getContext('2d');
+
+    document.getElementById('previewTitleMain').textContent = file.name;
+    document.getElementById('previewTitleSub').textContent =
+      `หน้า ${target.pageIndex + 1} • ${formatBytes(file.size)}`;
+
+    try {
+      const pdfjs = await getPdfJs();
+      const loadingTask = pdfjs.getDocument({ data: file.bytes.slice(0) });
+      preview.task = loadingTask;
+      const pdf = await loadingTask.promise;
+      const page = await pdf.getPage(target.pageIndex + 1);
+
+      const container = document.querySelector('.preview-body');
+      const baseViewport = page.getViewport({ scale: 1 });
+      const maxWidth = Math.max(320, container.clientWidth - 30);
+      const maxHeight = Math.max(320, container.clientHeight - 30);
+      const scale = Math.min(
+        maxWidth / baseViewport.width,
+        maxHeight / baseViewport.height
+      );
+      const viewport = page.getViewport({ scale: Math.max(0.5, scale) });
+
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = Math.floor(viewport.width * dpr);
+      canvas.height = Math.floor(viewport.height * dpr);
+      canvas.style.width = Math.floor(viewport.width) + 'px';
+      canvas.style.height = Math.floor(viewport.height) + 'px';
+
+      await page.render({
+        canvasContext: ctx,
+        viewport,
+        transform: dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : null
+      }).promise;
+
+      const realCount = state.queue.length;
+      document.getElementById('previewIndicator').textContent =
+        preview.queueIndex >= 0
+          ? `${preview.queueIndex + 1} / ${realCount}`
+          : `ตัวอย่างหน้า ${target.pageIndex + 1}`;
+    } catch (err) {
+      console.error(err);
+      alert('เปิดตัวอย่างหน้า PDF ไม่สำเร็จ\n\n' + (err.message || err));
+    }
+  }
+
+  function previewMove(delta) {
+    if (!state.queue.length) return;
+    if (preview.queueIndex < 0) {
+      const temp = preview.temp;
+      const idx = state.queue.findIndex(q =>
+        q.fileId === temp.fileId && q.pageIndex === temp.pageIndex
+      );
+      if (idx < 0) return;
+      preview.queueIndex = idx;
+    }
+    const next = preview.queueIndex + delta;
+    if (next < 0 || next >= state.queue.length) return;
+    preview.queueIndex = next;
+    delete preview.temp;
+    renderPreviewPage();
+  }
+
 
   async function exportPdf() {
     if (!state.queue.length) {
@@ -553,6 +729,26 @@
     renderQueue();
   });
   el.exportBtn.addEventListener('click', exportPdf);
+
+
+  document.getElementById('previewCloseBtn').addEventListener('click', closePreview);
+  document.getElementById('previewPrevBtn').addEventListener('click', () => previewMove(-1));
+  document.getElementById('previewNextBtn').addEventListener('click', () => previewMove(1));
+
+  document.getElementById('previewModal').addEventListener('click', (e) => {
+    if (e.target.id === 'previewModal') closePreview();
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (!preview.open) return;
+    if (e.key === 'Escape') closePreview();
+    if (e.key === 'ArrowLeft') previewMove(-1);
+    if (e.key === 'ArrowRight') previewMove(1);
+  });
+
+  window.addEventListener('resize', () => {
+    if (preview.open) renderPreviewPage();
+  });
 
   render();
 </script>
