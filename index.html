@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>PDF Studio - รวม PDF</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+
+  <style>
+    :root{
+      --bg:#f4f7fb;
+      --card:#fff;
+      --text:#172033;
+      --muted:#6b7280;
+      --primary:#4169e1;
+      --primary-dark:#3154c5;
+      --border:#e6eaf0;
+      --soft:#eef3ff;
+      --success:#198754;
+      --danger:#dc3545;
+      --shadow:0 10px 30px rgba(29, 45, 80, .08);
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      font-family:'Prompt',sans-serif;
+      background:linear-gradient(180deg,#f7f9fc 0%,#eef3f9 100%);
+      color:var(--text);
+    }
+    .app-shell{max-width:1200px;margin:0 auto;padding:28px 18px 48px}
+    .hero{
+      background:linear-gradient(135deg,#315efb,#6a5af9);
+      color:#fff;border-radius:22px;padding:28px 30px;
+      box-shadow:0 18px 45px rgba(55,75,180,.2);margin-bottom:20px;
+    }
+    .hero h1{font-size:28px;font-weight:700;margin:0 0 5px}
+    .hero p{margin:0;opacity:.9;font-weight:300}
+    .cardx{
+      background:var(--card);border:1px solid var(--border);
+      border-radius:18px;box-shadow:var(--shadow);
+    }
+    .toolbar{padding:16px}
+    .dropzone{
+      border:2px dashed #c8d2ea;border-radius:16px;
+      padding:30px 18px;text-align:center;background:#fbfcff;
+      cursor:pointer;transition:.2s ease;
+    }
+    .dropzone:hover,.dropzone.dragging{background:#f2f6ff;border-color:var(--primary)}
+    .dropzone .icon{font-size:42px;line-height:1;margin-bottom:12px}
+    .dropzone .title{font-weight:600;font-size:18px}
+    .dropzone .sub{color:var(--muted);font-size:14px}
+    .file-card{padding:16px;margin-bottom:14px}
+    .file-head{
+      display:flex;gap:12px;align-items:center;justify-content:space-between;
+      padding-bottom:12px;border-bottom:1px solid var(--border);margin-bottom:10px;
+    }
+    .file-info{display:flex;gap:12px;align-items:center;min-width:0}
+    .pdf-badge{
+      width:42px;height:42px;border-radius:12px;background:#fff0f0;color:#c62828;
+      display:grid;place-items:center;font-weight:700;font-size:12px;flex:0 0 auto;
+      border:1px solid #ffd5d5
+    }
+    .file-name{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .file-meta{font-size:12px;color:var(--muted)}
+    .page-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:8px}
+    .page-item{
+      position:relative;border:1px solid var(--border);border-radius:12px;
+      padding:9px 8px;background:#fff;cursor:pointer;user-select:none;
+      transition:.15s ease;min-height:72px
+    }
+    .page-item:hover{border-color:#bfcaf0;transform:translateY(-1px)}
+    .page-item.selected{border-color:var(--primary);background:var(--soft);box-shadow:0 0 0 2px rgba(65,105,225,.08)}
+    .page-number{font-size:20px;font-weight:700;color:#2b3855}
+    .page-caption{font-size:11px;color:var(--muted)}
+    .page-check{
+      position:absolute;top:7px;right:7px;width:18px;height:18px;
+      accent-color:var(--primary)
+    }
+    .summary{
+      position:sticky;top:18px;padding:18px;
+    }
+    .summary-title{font-weight:700;font-size:18px}
+    .stat{
+      display:flex;justify-content:space-between;align-items:center;
+      padding:9px 0;border-bottom:1px dashed var(--border);font-size:14px
+    }
+    .queue{
+      max-height:430px;overflow:auto;margin-top:8px
+    }
+    .queue-item{
+      display:flex;gap:10px;align-items:center;
+      border:1px solid var(--border);border-radius:12px;padding:9px 10px;margin-bottom:8px;
+      background:#fff
+    }
+    .queue-no{
+      width:30px;height:30px;border-radius:9px;background:#eef2ff;display:grid;place-items:center;
+      font-weight:700;color:#3855bd;flex:0 0 auto
+    }
+    .queue-text{min-width:0;flex:1}
+    .queue-main{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .queue-sub{font-size:11px;color:var(--muted)}
+    .queue-actions .btn{padding:.15rem .4rem}
+    .empty{
+      border:1px dashed var(--border);border-radius:14px;padding:25px;text-align:center;color:var(--muted)
+    }
+    .export-box{padding:18px}
+    .form-control,.form-select{border-radius:12px}
+    .btn-main{
+      border:0;border-radius:12px;padding:12px 18px;font-weight:600;
+      background:linear-gradient(135deg,#4169e1,#6559f4);color:#fff
+    }
+    .btn-main:hover{background:linear-gradient(135deg,#355bd2,#5a4be3);color:#fff}
+    .mini-btn{border-radius:10px}
+    .hint{font-size:12px;color:var(--muted)}
+    .footer-note{font-size:12px;color:var(--muted);text-align:center;margin-top:18px}
+    @media(max-width:992px){
+      .summary{position:static}
+    }
+  </style>
+</head>
+
+<body>
+<div class="app-shell">
+
+  <div class="hero">
+    <h1>PDF Studio</h1>
+    <p>รวม PDF • เลือกหน้า • เพิ่มหลายไฟล์ • ส่งออกได้หลายรอบ โดยไฟล์ต้นฉบับไม่ถูกแก้ไข</p>
+  </div>
+
+  <div class="row g-3">
+
+    <div class="col-lg-8">
+
+      <div class="cardx toolbar mb-3">
+        <div id="dropzone" class="dropzone">
+          <div class="icon">📄</div>
+          <div class="title">ลาก PDF มาวางที่นี่</div>
+          <div class="sub">หรือคลิกเพื่อเลือกหลายไฟล์พร้อมกัน</div>
+          <input id="fileInput" type="file" accept="application/pdf,.pdf" multiple hidden>
+        </div>
+        <div class="d-flex flex-wrap gap-2 mt-3">
+          <button id="addMoreBtn" class="btn btn-outline-primary mini-btn">＋ เพิ่ม PDF</button>
+          <button id="selectAllBtn" class="btn btn-outline-secondary mini-btn">เลือกทุกหน้า</button>
+          <button id="clearAllBtn" class="btn btn-outline-secondary mini-btn">ยกเลิกทุกหน้า</button>
+          <button id="clearFilesBtn" class="btn btn-outline-danger mini-btn ms-auto">ล้างรายการ</button>
+        </div>
+      </div>
+
+      <div id="filesArea"></div>
+
+      <div id="emptyState" class="empty cardx">
+        ยังไม่มี PDF<br>
+        <span class="hint">เพิ่มไฟล์ 1 ไฟล์หรือหลายไฟล์ แล้วเลือกหน้าที่ต้องการรวม</span>
+      </div>
+
+    </div>
+
+    <div class="col-lg-4">
+
+      <div class="cardx summary mb-3">
+
+        <div class="summary-title mb-2">ลำดับหน้าเอกสาร</div>
+
+        <div class="stat"><span>ไฟล์ต้นฉบับ</span><strong id="fileCount">0</strong></div>
+        <div class="stat"><span>หน้าที่เลือก</span><strong id="selectedCount">0</strong></div>
+
+        <div class="d-flex justify-content-between align-items-center mt-3 mb-2">
+          <span class="hint">สามารถเลื่อนลำดับด้วย ↑ ↓</span>
+          <button id="reverseBtn" class="btn btn-sm btn-outline-secondary mini-btn">กลับลำดับ</button>
+        </div>
+
+        <div id="queue" class="queue">
+          <div class="hint text-center py-3">ยังไม่มีหน้าที่เลือก</div>
+        </div>
+
+      </div>
+
+      <div class="cardx export-box">
+
+        <div class="summary-title mb-3">ส่งออก PDF</div>
+
+        <label class="form-label">ชื่อไฟล์</label>
+        <div class="input-group mb-2">
+          <input id="filenameInput" class="form-control" value="รวมเอกสาร">
+          <span class="input-group-text">.pdf</span>
+        </div>
+
+        <div class="hint mb-3">
+          ส่งออกได้หลายรอบ ชื่อไฟล์แต่ละรอบเปลี่ยนได้ ไฟล์ PDF ที่เลือกเข้าระบบจะไม่ถูกลบหรือแก้ไข
+        </div>
+
+        <button id="exportBtn" class="btn-main w-100">⬇ ส่งออก PDF</button>
+
+        <div id="exportStatus" class="small mt-3 text-center text-muted"></div>
+      </div>
+
+      <div class="footer-note">
+        การรวม PDF ทำในเบราว์เซอร์ เครื่องของคุณจึงไม่ต้องส่งไฟล์ต้นฉบับไปเก็บบนระบบ
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+  const { PDFDocument } = PDFLib;
+
+  const state = {
+    files: [], // { id, file, name, size, pdfDoc, pageCount, selected:Set }
+    queue: []  // { fileId, pageIndex }
+  };
+
+  const el = {
+    fileInput: document.getElementById('fileInput'),
+    dropzone: document.getElementById('dropzone'),
+    addMoreBtn: document.getElementById('addMoreBtn'),
+    filesArea: document.getElementById('filesArea'),
+    emptyState: document.getElementById('emptyState'),
+    fileCount: document.getElementById('fileCount'),
+    selectedCount: document.getElementById('selectedCount'),
+    queue: document.getElementById('queue'),
+    selectAllBtn: document.getElementById('selectAllBtn'),
+    clearAllBtn: document.getElementById('clearAllBtn'),
+    clearFilesBtn: document.getElementById('clearFilesBtn'),
+    reverseBtn: document.getElementById('reverseBtn'),
+    filenameInput: document.getElementById('filenameInput'),
+    exportBtn: document.getElementById('exportBtn'),
+    exportStatus: document.getElementById('exportStatus')
+  };
+
+  function uid() {
+    return 'f_' + Date.now() + '_' + Math.random().toString(36).slice(2, 9);
+  }
+
+  function formatBytes(bytes) {
+    if (!bytes) return '0 B';
+    const units = ['B','KB','MB','GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(1024));
+    return (bytes / Math.pow(1024, i)).toFixed(i ? 1 : 0) + ' ' + units[i];
+  }
+
+  function safeName(name) {
+    return (name || '')
+      .replace(/[\\/:*?"<>|]/g, '-')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 150);
+  }
+
+  async function addFiles(fileList) {
+    const files = Array.from(fileList || [])
+      .filter(f => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'));
+
+    if (!files.length) return;
+
+    el.exportStatus.textContent = 'กำลังอ่าน PDF...';
+
+    for (const file of files) {
+      try {
+        const bytes = await file.arrayBuffer();
+        const pdfDoc = await PDFDocument.load(bytes, { ignoreEncryption: false });
+
+        const item = {
+          id: uid(),
+          file,
+          name: file.name,
+          size: file.size,
+          pdfDoc,
+          pageCount: pdfDoc.getPageCount(),
+          selected: new Set()
+        };
+
+        state.files.push(item);
+
+      } catch (err) {
+        alert(`เปิดไฟล์ไม่สำเร็จ: ${file.name}\n\n${err.message || err}`);
+      }
+    }
+
+    el.fileInput.value = '';
+    el.exportStatus.textContent = '';
+    render();
+  }
+
+  function removeFile(fileId) {
+    const idx = state.files.findIndex(f => f.id === fileId);
+    if (idx < 0) return;
+
+    state.files.splice(idx, 1);
+    state.queue = state.queue.filter(q => q.fileId !== fileId);
+    render();
+  }
+
+  function isSelected(fileId, pageIndex) {
+    return state.files.find(f => f.id === fileId)?.selected.has(pageIndex);
+  }
+
+  function togglePage(fileId, pageIndex) {
+    const file = state.files.find(f => f.id === fileId);
+    if (!file) return;
+
+    if (file.selected.has(pageIndex)) {
+      file.selected.delete(pageIndex);
+      state.queue = state.queue.filter(q => !(q.fileId === fileId && q.pageIndex === pageIndex));
+    } else {
+      file.selected.add(pageIndex);
+      state.queue.push({ fileId, pageIndex });
+    }
+    render();
+  }
+
+  function render() {
+    el.emptyState.style.display = state.files.length ? 'none' : '';
+    el.fileCount.textContent = state.files.length;
+    el.selectedCount.textContent = state.queue.length;
+
+    el.filesArea.innerHTML = '';
+
+    state.files.forEach(file => {
+      const card = document.createElement('div');
+      card.className = 'cardx file-card';
+
+      const head = document.createElement('div');
+      head.className = 'file-head';
+
+      const info = document.createElement('div');
+      info.className = 'file-info';
+      info.innerHTML = `
+        <div class="pdf-badge">PDF</div>
+        <div style="min-width:0">
+          <div class="file-name" title="${escapeHtml(file.name)}">${escapeHtml(file.name)}</div>
+          <div class="file-meta">${formatBytes(file.size)} • ${file.pageCount} หน้า • เลือก ${file.selected.size}</div>
+        </div>
+      `;
+
+      const actions = document.createElement('div');
+      actions.innerHTML = `<button class="btn btn-sm btn-outline-danger mini-btn">ลบ</button>`;
+      actions.querySelector('button').onclick = () => removeFile(file.id);
+
+      head.appendChild(info);
+      head.appendChild(actions);
+
+      const pageGrid = document.createElement('div');
+      pageGrid.className = 'page-grid';
+
+      for (let i = 0; i < file.pageCount; i++) {
+        const item = document.createElement('div');
+        item.className = 'page-item' + (isSelected(file.id, i) ? ' selected' : '');
+        item.innerHTML = `
+          <input class="page-check" type="checkbox" ${isSelected(file.id, i) ? 'checked' : ''}>
+          <div class="page-number">${i + 1}</div>
+          <div class="page-caption">หน้า ${i + 1}</div>
+        `;
+        item.onclick = (e) => {
+          if (e.target.matches('input')) {
+            togglePage(file.id, i);
+          } else {
+            togglePage(file.id, i);
+          }
+        };
+        pageGrid.appendChild(item);
+      }
+
+      card.appendChild(head);
+      card.appendChild(pageGrid);
+      el.filesArea.appendChild(card);
+    });
+
+    renderQueue();
+  }
+
+  function renderQueue() {
+    el.queue.innerHTML = '';
+
+    if (!state.queue.length) {
+      el.queue.innerHTML = '<div class="hint text-center py-3">ยังไม่มีหน้าที่เลือก</div>';
+      return;
+    }
+
+    state.queue.forEach((q, index) => {
+      const file = state.files.find(f => f.id === q.fileId);
+      if (!file) return;
+
+      const row = document.createElement('div');
+      row.className = 'queue-item';
+
+      row.innerHTML = `
+        <div class="queue-no">${index + 1}</div>
+        <div class="queue-text">
+          <div class="queue-main">${escapeHtml(file.name)}</div>
+          <div class="queue-sub">หน้า ${q.pageIndex + 1}</div>
+        </div>
+        <div class="queue-actions d-flex gap-1">
+          <button class="btn btn-sm btn-outline-secondary">↑</button>
+          <button class="btn btn-sm btn-outline-secondary">↓</button>
+          <button class="btn btn-sm btn-outline-danger">×</button>
+        </div>
+      `;
+
+      const buttons = row.querySelectorAll('button');
+      buttons[0].onclick = () => moveQueue(index, -1);
+      buttons[1].onclick = () => moveQueue(index, 1);
+      buttons[2].onclick = () => removeFromQueue(index);
+
+      el.queue.appendChild(row);
+    });
+  }
+
+  function moveQueue(index, delta) {
+    const newIndex = index + delta;
+    if (newIndex < 0 || newIndex >= state.queue.length) return;
+
+    [state.queue[index], state.queue[newIndex]] =
+      [state.queue[newIndex], state.queue[index]];
+
+    renderQueue();
+  }
+
+  function removeFromQueue(index) {
+    const q = state.queue[index];
+    const file = state.files.find(f => f.id === q.fileId);
+    if (file) file.selected.delete(q.pageIndex);
+    state.queue.splice(index, 1);
+    render();
+  }
+
+  function selectAll() {
+    state.files.forEach(file => {
+      for (let i = 0; i < file.pageCount; i++) {
+        if (!file.selected.has(i)) {
+          file.selected.add(i);
+          state.queue.push({ fileId: file.id, pageIndex: i });
+        }
+      }
+    });
+    render();
+  }
+
+  function clearAll() {
+    state.files.forEach(file => file.selected.clear());
+    state.queue = [];
+    render();
+  }
+
+  async function exportPdf() {
+    if (!state.queue.length) {
+      alert('กรุณาเลือกอย่างน้อย 1 หน้า');
+      return;
+    }
+
+    let filename = safeName(el.filenameInput.value);
+    if (!filename) filename = 'รวมเอกสาร';
+
+    el.exportBtn.disabled = true;
+    el.exportStatus.textContent = 'กำลังสร้าง PDF...';
+
+    try {
+      const out = await PDFDocument.create();
+
+      const grouped = new Map();
+      state.queue.forEach((q, orderIndex) => {
+        if (!grouped.has(q.fileId)) grouped.set(q.fileId, []);
+        grouped.get(q.fileId).push({ pageIndex: q.pageIndex, orderIndex });
+      });
+
+      const importedByOrder = new Array(state.queue.length);
+
+      for (const [fileId, requests] of grouped.entries()) {
+        const file = state.files.find(f => f.id === fileId);
+        const uniquePages = [...new Set(requests.map(x => x.pageIndex))];
+
+        const pages = await out.copyPages(file.pdfDoc, uniquePages);
+        const pageMap = new Map();
+        uniquePages.forEach((pageIndex, i) => pageMap.set(pageIndex, pages[i]));
+
+        requests.forEach(req => {
+          importedByOrder[req.orderIndex] = pageMap.get(req.pageIndex);
+        });
+      }
+
+      importedByOrder.forEach(page => out.addPage(page));
+
+      const bytes = await out.save({
+        useObjectStreams: true,
+        addDefaultPage: false
+      });
+
+      const blob = new Blob([bytes], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename + '.pdf';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+
+      setTimeout(() => URL.revokeObjectURL(url), 30000);
+
+      el.exportStatus.textContent =
+        `ส่งออกสำเร็จ • ${state.queue.length} หน้า • ${formatBytes(bytes.length)}`;
+
+    } catch (err) {
+      console.error(err);
+      alert('รวม PDF ไม่สำเร็จ\n\n' + (err.message || err));
+      el.exportStatus.textContent = 'เกิดข้อผิดพลาด';
+    } finally {
+      el.exportBtn.disabled = false;
+    }
+  }
+
+  function escapeHtml(text) {
+    return String(text)
+      .replaceAll('&','&amp;')
+      .replaceAll('<','&lt;')
+      .replaceAll('>','&gt;')
+      .replaceAll('"','&quot;')
+      .replaceAll("'","&#039;");
+  }
+
+  el.dropzone.addEventListener('click', () => el.fileInput.click());
+  el.addMoreBtn.addEventListener('click', () => el.fileInput.click());
+  el.fileInput.addEventListener('change', e => addFiles(e.target.files));
+
+  el.dropzone.addEventListener('dragover', e => {
+    e.preventDefault();
+    el.dropzone.classList.add('dragging');
+  });
+  el.dropzone.addEventListener('dragleave', () => {
+    el.dropzone.classList.remove('dragging');
+  });
+  el.dropzone.addEventListener('drop', e => {
+    e.preventDefault();
+    el.dropzone.classList.remove('dragging');
+    addFiles(e.dataTransfer.files);
+  });
+
+  el.selectAllBtn.addEventListener('click', selectAll);
+  el.clearAllBtn.addEventListener('click', clearAll);
+  el.clearFilesBtn.addEventListener('click', () => {
+    if (!state.files.length) return;
+    state.files.length = 0;
+    state.queue = [];
+    render();
+  });
+  el.reverseBtn.addEventListener('click', () => {
+    state.queue.reverse();
+    renderQueue();
+  });
+  el.exportBtn.addEventListener('click', exportPdf);
+
+  render();
+</script>
+</body>
+</html>
