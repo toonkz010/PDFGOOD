@@ -2,40 +2,38 @@
 <html lang="th">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
 
-  <title>Scanner Studio - สแกนเอกสาร</title>
+  <title>PDF Studio - รวม PDF และสแกนเอกสาร</title>
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link
-    href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap"
-    rel="stylesheet"
-  >
+  <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 
-  <link
-    href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
-    rel="stylesheet"
-  >
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
 
-  <!-- OpenCV ใช้ตรวจขอบกระดาษและปรับ Perspective -->
-  <script async src="https://docs.opencv.org/4.10.0/opencv.js"></script>
-
-  <!-- PDF-Lib ใช้สร้าง PDF -->
+  <!-- PDF-Lib: รวม PDF / สร้าง PDF จากภาพ -->
   <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+
+  <!-- OpenCV: ตรวจขอบกระดาษ + perspective correction -->
+  <script
+    src="https://docs.opencv.org/4.10.0/opencv.js"
+    id="opencvScript">
+  </script>
 
   <style>
     :root{
       --bg:#f4f7fb;
       --card:#fff;
       --text:#172033;
-      --muted:#6f7889;
+      --muted:#70798a;
       --primary:#4169e1;
       --primary2:#6857f5;
       --border:#e3e8f0;
       --soft:#eef3ff;
       --danger:#dc3545;
-      --shadow:0 10px 28px rgba(30,45,77,.08);
+      --success:#198754;
+      --shadow:0 10px 30px rgba(31,45,78,.08);
     }
 
     *{box-sizing:border-box}
@@ -47,23 +45,32 @@
       color:var(--text);
     }
 
-    .shell{
+    .app-shell{
       max-width:1250px;
-      margin:auto;
-      padding:24px 16px 46px;
+      margin:0 auto;
+      padding:24px 16px 50px;
     }
 
     .hero{
-      padding:24px 26px;
-      border-radius:22px;
       color:#fff;
+      border-radius:22px;
+      padding:25px 28px;
       margin-bottom:18px;
-      background:linear-gradient(135deg,#315efb,#6a57f6);
+      background:linear-gradient(135deg,#315efb,#6958f6);
       box-shadow:0 18px 45px rgba(64,82,190,.18);
     }
 
-    .hero h1{margin:0;font-size:28px;font-weight:700}
-    .hero p{margin:4px 0 0;opacity:.9;font-weight:300}
+    .hero h1{
+      margin:0 0 4px;
+      font-size:28px;
+      font-weight:700;
+    }
+
+    .hero p{
+      margin:0;
+      opacity:.9;
+      font-weight:300;
+    }
 
     .cardx{
       background:#fff;
@@ -72,25 +79,261 @@
       box-shadow:var(--shadow);
     }
 
+    .tabs-wrap{
+      padding:8px;
+      margin-bottom:18px;
+    }
+
+    .app-tab{
+      border:0;
+      border-radius:12px;
+      padding:10px 18px;
+      font-weight:600;
+      color:#5e687b;
+      background:transparent;
+    }
+
+    .app-tab.active{
+      color:#fff;
+      background:linear-gradient(135deg,var(--primary),var(--primary2));
+    }
+
+    .tab-panel{display:none}
+    .tab-panel.active{display:block}
+
     .panel{padding:16px}
+
+    .dropzone{
+      border:2px dashed #c8d3ec;
+      border-radius:16px;
+      padding:28px 18px;
+      background:#fbfcff;
+      text-align:center;
+      cursor:pointer;
+      transition:.18s;
+    }
+
+    .dropzone:hover,
+    .dropzone.dragging{
+      border-color:var(--primary);
+      background:#f2f6ff;
+    }
+
+    .dropzone .icon{font-size:42px;line-height:1;margin-bottom:10px}
+    .dropzone .title{font-size:18px;font-weight:600}
+    .dropzone .sub{font-size:13px;color:var(--muted);margin-top:3px}
+
+    .file-card{
+      padding:16px;
+      margin-bottom:14px;
+    }
+
+    .file-head{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      padding-bottom:12px;
+      margin-bottom:10px;
+      border-bottom:1px solid var(--border);
+    }
+
+    .file-info{
+      min-width:0;
+      display:flex;
+      align-items:center;
+      gap:12px;
+    }
+
+    .pdf-badge{
+      width:42px;
+      height:42px;
+      flex:0 0 auto;
+      display:grid;
+      place-items:center;
+      border:1px solid #ffd6d6;
+      border-radius:12px;
+      background:#fff1f1;
+      color:#c62828;
+      font-weight:700;
+      font-size:12px;
+    }
+
+    .file-name{
+      font-size:14px;
+      font-weight:600;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+
+    .file-meta{
+      font-size:12px;
+      color:var(--muted);
+      margin-top:2px;
+    }
+
+    .page-grid{
+      display:grid;
+      grid-template-columns:repeat(auto-fill,minmax(92px,1fr));
+      gap:8px;
+    }
+
+    .page-item{
+      position:relative;
+      min-height:76px;
+      padding:9px 8px;
+      background:#fff;
+      border:1px solid var(--border);
+      border-radius:12px;
+      cursor:zoom-in;
+      user-select:none;
+      transition:.15s;
+    }
+
+    .page-item:hover{
+      transform:translateY(-1px);
+      border-color:#bac7ed;
+    }
+
+    .page-item.selected{
+      background:var(--soft);
+      border-color:var(--primary);
+    }
+
+    .page-number{
+      font-size:20px;
+      font-weight:700;
+      color:#2b3752;
+    }
+
+    .page-caption{
+      font-size:10px;
+      color:var(--muted);
+    }
+
+    .page-check{
+      position:absolute;
+      top:7px;
+      right:7px;
+      width:18px;
+      height:18px;
+      accent-color:var(--primary);
+      cursor:pointer;
+    }
+
+    .summary{
+      position:sticky;
+      top:16px;
+      padding:18px;
+    }
+
+    .summary-title{
+      font-size:18px;
+      font-weight:700;
+    }
+
+    .stat{
+      display:flex;
+      justify-content:space-between;
+      padding:9px 0;
+      border-bottom:1px dashed var(--border);
+      font-size:14px;
+    }
+
+    .queue{
+      max-height:430px;
+      overflow:auto;
+      margin-top:8px;
+    }
+
+    .queue-item{
+      display:flex;
+      align-items:center;
+      gap:10px;
+      padding:9px 10px;
+      margin-bottom:8px;
+      border:1px solid var(--border);
+      border-radius:12px;
+      background:#fff;
+    }
+
+    .queue-no{
+      width:30px;
+      height:30px;
+      flex:0 0 auto;
+      display:grid;
+      place-items:center;
+      border-radius:9px;
+      background:#eef2ff;
+      color:#3855bd;
+      font-weight:700;
+    }
+
+    .queue-text{
+      min-width:0;
+      flex:1;
+      cursor:zoom-in;
+    }
+
+    .queue-main{
+      font-size:13px;
+      font-weight:600;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+
+    .queue-sub{
+      font-size:11px;
+      color:var(--muted);
+    }
+
+    .queue-actions .btn{
+      padding:.15rem .4rem;
+    }
+
+    .empty{
+      padding:26px;
+      border:1px dashed var(--border);
+      color:var(--muted);
+      text-align:center;
+    }
+
+    .toolbar{
+      display:flex;
+      flex-wrap:wrap;
+      align-items:center;
+      gap:8px;
+    }
+
+    .toolbar .form-select{
+      width:auto;
+      min-width:135px;
+      border-radius:11px;
+    }
+
+    /* Scanner */
+    .camera-card{padding:16px}
 
     .camera-wrap{
       position:relative;
+      min-height:360px;
       overflow:hidden;
-      border-radius:16px;
-      background:#0b1020;
-      min-height:330px;
       display:flex;
       align-items:center;
       justify-content:center;
+      border-radius:16px;
+      background:#080d18;
     }
 
     #cameraVideo{
+      display:none;
       width:100%;
+      height:100%;
       max-height:620px;
       object-fit:contain;
-      background:#0b1020;
-      display:none;
+      background:#080d18;
     }
 
     #cameraCanvas{
@@ -98,52 +341,65 @@
     }
 
     .camera-placeholder{
-      padding:55px 20px;
-      color:#9ca6ba;
+      padding:54px 18px;
       text-align:center;
+      color:#9aa6bd;
     }
 
-    .camera-actions{
-      display:flex;
-      flex-wrap:wrap;
-      gap:8px;
-      margin-top:12px;
+    .camera-placeholder .big{
+      font-size:48px;
+      line-height:1;
+      margin-bottom:12px;
     }
 
-    .dropzone{
-      border:2px dashed #c9d4ec;
-      border-radius:16px;
-      padding:24px;
-      text-align:center;
-      background:#fbfcff;
+    .shutter-button{
+      position:absolute;
+      left:50%;
+      bottom:18px;
+      transform:translateX(-50%);
+      display:none;
+      width:76px;
+      height:76px;
+      padding:0;
+      border:6px solid rgba(255,255,255,.85);
+      border-radius:50%;
+      background:#e9425a;
+      box-shadow:0 6px 22px rgba(0,0,0,.3);
       cursor:pointer;
-      transition:.18s;
     }
 
-    .dropzone:hover,.dropzone.dragging{
-      border-color:var(--primary);
-      background:#f2f6ff;
+    .shutter-button:active{
+      transform:translateX(-50%) scale(.95);
     }
 
-    .drop-title{font-weight:600;font-size:18px}
-    .drop-sub{font-size:13px;color:var(--muted);margin-top:4px}
-
-    .toolbar{
-      display:flex;
-      flex-wrap:wrap;
-      gap:8px;
-      align-items:center;
+    .shutter-button.active{
+      display:block;
     }
 
-    .toolbar .form-select{
-      width:auto;
-      min-width:145px;
-      border-radius:11px;
+    .shutter-inner{
+      position:absolute;
+      inset:11px;
+      border-radius:50%;
+      background:#fff;
     }
 
-    .scan-grid{
+    .camera-live-badge{
+      position:absolute;
+      top:10px;
+      left:10px;
+      display:none;
+      padding:5px 9px;
+      border-radius:8px;
+      background:rgba(198,40,40,.9);
+      color:#fff;
+      font-size:11px;
+    }
+
+    .camera-live-badge.show{display:block}
+
+    .scanner-grid{
       display:grid;
-      grid-template-columns:repeat(auto-fill,minmax(190px,1fr));
+      grid-template-columns:repeat(auto-fill,minmax(185px,1fr));
       gap:12px;
     }
 
@@ -154,31 +410,32 @@
       background:#fff;
     }
 
-    .thumb{
+    .scan-thumb{
       position:relative;
       aspect-ratio:4/5;
-      background:#edf1f7;
       display:flex;
       align-items:center;
       justify-content:center;
       overflow:hidden;
+      background:#edf1f7;
+      cursor:zoom-in;
     }
 
-    .thumb img{
+    .scan-thumb img{
       width:100%;
       height:100%;
       object-fit:contain;
       background:#fff;
     }
 
-    .badge-page{
+    .scan-page-badge{
       position:absolute;
       top:8px;
       left:8px;
-      background:rgba(20,30,50,.82);
-      color:#fff;
       padding:3px 7px;
       border-radius:8px;
+      background:rgba(20,30,50,.82);
+      color:#fff;
       font-size:11px;
     }
 
@@ -200,60 +457,54 @@
       margin-top:2px;
     }
 
-    .scan-buttons{
+    .scan-actions{
       display:flex;
       flex-wrap:wrap;
       gap:5px;
       margin-top:8px;
     }
 
-    .empty{
-      padding:28px;
+    .scanner-status{
+      margin-top:9px;
+      font-size:12px;
       color:var(--muted);
-      text-align:center;
-      border:1px dashed var(--border);
+      min-height:18px;
     }
 
     .right-card{
       position:sticky;
       top:16px;
+      padding:18px;
     }
 
-    .stat{
-      display:flex;
-      justify-content:space-between;
-      padding:8px 0;
-      border-bottom:1px dashed var(--border);
-      font-size:14px;
-    }
-
-    .preview-overlay{
+    .preview-modal{
       position:fixed;
       inset:0;
       z-index:10000;
       display:none;
       align-items:center;
       justify-content:center;
-      background:rgba(7,13,26,.82);
       padding:16px;
+      background:rgba(7,13,26,.82);
     }
 
-    .preview-overlay.show{display:flex}
+    .preview-modal.show{display:flex}
 
     .preview-box{
-      width:min(1100px,96vw);
+      width:min(1120px,96vw);
       height:min(93vh,900px);
-      background:#111827;
-      border-radius:18px;
-      overflow:hidden;
       display:flex;
       flex-direction:column;
+      overflow:hidden;
+      background:#111827;
+      border-radius:18px;
     }
 
-    .preview-top{
+    .preview-head{
       display:flex;
       align-items:center;
       justify-content:space-between;
+      gap:12px;
       padding:10px 14px;
       color:#fff;
       background:#182033;
@@ -262,265 +513,503 @@
     .preview-body{
       flex:1;
       min-height:0;
-      overflow:auto;
       display:flex;
       align-items:center;
       justify-content:center;
-      padding:18px;
+      overflow:hidden;
       background:#0b1020;
     }
 
-    #previewImage{
+    .preview-frame{
+      width:100%;
+      height:100%;
+      border:0;
+      background:#0b1020;
+    }
+
+    .preview-image{
       max-width:100%;
       max-height:100%;
       object-fit:contain;
       background:#fff;
-      box-shadow:0 10px 30px rgba(0,0,0,.4);
     }
 
     .preview-bottom{
       display:flex;
-      justify-content:center;
       align-items:center;
+      justify-content:center;
       gap:8px;
       padding:9px;
       background:#182033;
     }
 
-    .tip{
-      font-size:12px;
-      color:var(--muted);
+    .preview-index{
+      min-width:115px;
+      color:#fff;
+      text-align:center;
+      font-size:13px;
     }
 
-    @media(max-width:900px){
-      .right-card{position:static}
+    @media(max-width:992px){
+      .summary,.right-card{position:static}
     }
   </style>
 </head>
 
 <body>
-<div class="shell">
+
+<div class="app-shell">
 
   <div class="hero">
-    <h1>Scanner Studio</h1>
-    <p>ถ่ายเอกสาร • ตรวจขอบ • ครอปอัตโนมัติ • ปรับภาพ • รวมเป็น PDF</p>
+    <h1>PDF Studio</h1>
+    <p>รวม PDF และสแกนเอกสาร • แยกฟังก์ชันในโปรเจกต์เดียว</p>
   </div>
 
-  <div class="row g-3">
+  <div class="cardx tabs-wrap">
+    <div class="d-flex flex-wrap gap-2">
+      <button
+        id="mergeTabBtn"
+        class="app-tab active"
+        type="button"
+      >
+        📚 รวม PDF
+      </button>
 
-    <div class="col-lg-8">
+      <button
+        id="scanTabBtn"
+        class="app-tab"
+        type="button"
+      >
+        📷 สแกนเอกสาร
+      </button>
+    </div>
+  </div>
 
-      <div class="cardx panel mb-3">
 
-        <div class="toolbar mb-3">
+  <!-- =====================================================
+       MERGE PDF
+  ====================================================== -->
 
-          <button
-            id="startCameraBtn"
-            class="btn btn-primary"
-            type="button"
+  <section id="mergePanel" class="tab-panel active">
+
+    <div class="row g-3">
+
+      <div class="col-lg-8">
+
+        <div class="cardx panel mb-3">
+
+          <div
+            id="pdfDropzone"
+            class="dropzone"
           >
-            📷 เปิดกล้อง
-          </button>
+            <div class="icon">📄</div>
+            <div class="title">ลาก PDF มาวางที่นี่</div>
+            <div class="sub">หรือคลิกเพื่อเลือก PDF หลายไฟล์</div>
 
-          <button
-            id="captureBtn"
-            class="btn btn-success"
-            type="button"
-            disabled
-          >
-            ถ่ายเอกสาร
-          </button>
+            <input
+              id="pdfFileInput"
+              type="file"
+              accept="application/pdf,.pdf"
+              multiple
+              hidden
+            >
+          </div>
 
-          <button
-            id="stopCameraBtn"
-            class="btn btn-outline-secondary"
-            type="button"
-            disabled
-          >
-            ปิดกล้อง
-          </button>
+          <div class="d-flex flex-wrap gap-2 mt-3">
 
-          <select id="paperSelect" class="form-select">
-            <option value="auto">ขนาดต้นฉบับ</option>
-            <option value="letter">Letter</option>
-            <option value="a4" selected>A4</option>
-          </select>
+            <button
+              id="addPdfBtn"
+              class="btn btn-outline-primary mini-btn"
+              type="button"
+            >
+              ＋ เพิ่ม PDF
+            </button>
 
-          <select id="modeSelect" class="form-select">
-            <option value="document">Document</option>
-            <option value="color">สี</option>
-            <option value="gray">ขาวเทา</option>
-            <option value="bw">ขาวดำ</option>
-          </select>
+            <button
+              id="selectAllPdfBtn"
+              class="btn btn-outline-secondary mini-btn"
+              type="button"
+            >
+              เลือกทุกหน้า
+            </button>
+
+            <button
+              id="clearAllPdfBtn"
+              class="btn btn-outline-secondary mini-btn"
+              type="button"
+            >
+              ยกเลิกทุกหน้า
+            </button>
+
+            <button
+              id="clearPdfFilesBtn"
+              class="btn btn-outline-danger mini-btn ms-auto"
+              type="button"
+            >
+              ล้างรายการ
+            </button>
+
+          </div>
 
         </div>
 
-        <div class="camera-wrap">
-          <video
-            id="cameraVideo"
-            autoplay
-            playsinline
-            muted
-          ></video>
+        <div id="pdfFilesArea"></div>
 
-          <canvas id="cameraCanvas"></canvas>
+        <div
+          id="pdfEmptyState"
+          class="empty cardx"
+        >
+          ยังไม่มี PDF
+        </div>
 
-          <div id="cameraPlaceholder" class="camera-placeholder">
-            <div style="font-size:48px">📷</div>
-            <div style="font-size:18px;font-weight:600">
-              กด “เปิดกล้อง” เพื่อเริ่มสแกน
-            </div>
-            <div class="tip mt-1">
-              แนะนำให้ถ่ายบนพื้นหลังที่ตัดกับกระดาษ
+      </div>
+
+
+      <div class="col-lg-4">
+
+        <div class="cardx summary">
+
+          <div class="summary-title mb-2">
+            ลำดับหน้าเอกสาร
+          </div>
+
+          <div class="stat">
+            <span>ไฟล์</span>
+            <strong id="pdfFileCount">0</strong>
+          </div>
+
+          <div class="stat">
+            <span>หน้าที่เลือก</span>
+            <strong id="pdfSelectedCount">0</strong>
+          </div>
+
+          <div class="d-flex justify-content-between align-items-center mt-3 mb-2">
+            <span class="hint">คลิกเพื่อดูตัวอย่าง</span>
+
+            <button
+              id="reversePdfBtn"
+              class="btn btn-sm btn-outline-secondary mini-btn"
+              type="button"
+            >
+              กลับลำดับ
+            </button>
+          </div>
+
+          <div id="pdfQueue" class="queue">
+            <div class="hint text-center py-3">
+              ยังไม่มีหน้าที่เลือก
             </div>
           </div>
+
         </div>
 
-        <div class="camera-actions">
 
-          <label class="btn btn-outline-primary">
-            ＋ เพิ่มรูปจากเครื่อง
+        <div class="cardx panel mt-3">
+
+          <div class="summary-title mb-3">
+            ส่งออก PDF
+          </div>
+
+          <label class="form-label">
+            ชื่อไฟล์
+          </label>
+
+          <div class="input-group">
             <input
-              id="imageInput"
+              id="pdfFilename"
+              class="form-control"
+              value="รวมเอกสาร"
+            >
+            <span class="input-group-text">.pdf</span>
+          </div>
+
+          <button
+            id="pdfExportBtn"
+            class="btn btn-primary w-100 mt-3"
+            type="button"
+          >
+            ⬇ ส่งออก PDF
+          </button>
+
+          <div
+            id="pdfStatus"
+            class="hint text-center mt-3"
+          ></div>
+
+        </div>
+
+      </div>
+
+    </div>
+
+  </section>
+
+
+  <!-- =====================================================
+       SCANNER
+  ====================================================== -->
+
+  <section id="scanPanel" class="tab-panel">
+
+    <div class="row g-3">
+
+      <div class="col-lg-8">
+
+        <div class="cardx camera-card mb-3">
+
+          <div class="toolbar mb-3">
+
+            <button
+              id="startCameraBtn"
+              class="btn btn-primary"
+              type="button"
+            >
+              📷 เปิดกล้อง
+            </button>
+
+            <button
+              id="stopCameraBtn"
+              class="btn btn-outline-secondary"
+              type="button"
+              disabled
+            >
+              ปิดกล้อง
+            </button>
+
+            <select
+              id="scanMode"
+              class="form-select"
+            >
+              <option value="document">เอกสาร (แนะนำ)</option>
+              <option value="color">สี</option>
+              <option value="gray">ขาวเทา</option>
+              <option value="bw">ขาวดำ</option>
+            </select>
+
+            <button
+              id="scanImportBtn"
+              class="btn btn-outline-primary"
+              type="button"
+            >
+              ＋ เพิ่มรูป
+            </button>
+
+            <input
+              id="scanImageInput"
               type="file"
               accept="image/*"
               multiple
               hidden
             >
+
+          </div>
+
+
+          <div class="camera-wrap">
+
+            <video
+              id="cameraVideo"
+              autoplay
+              playsinline
+              muted
+            ></video>
+
+            <canvas
+              id="cameraCanvas"
+            ></canvas>
+
+            <div
+              id="cameraPlaceholder"
+              class="camera-placeholder"
+            >
+              <div class="big">📷</div>
+
+              <div style="font-weight:600;font-size:18px">
+                กด “เปิดกล้อง”
+              </div>
+
+              <div class="tip mt-1">
+                ถ่ายบนพื้นหลังที่ตัดกับกระดาษ จะตรวจขอบได้แม่นยำขึ้น
+              </div>
+            </div>
+
+            <div
+              id="cameraLiveBadge"
+              class="camera-live-badge"
+            >
+              ● กำลังใช้กล้อง
+            </div>
+
+            <button
+              id="shutterBtn"
+              class="shutter-button"
+              type="button"
+              title="ถ่ายภาพ"
+            >
+              <span class="shutter-inner"></span>
+            </button>
+
+          </div>
+
+
+          <div
+            id="scanStatus"
+            class="scanner-status"
+          >
+            ระบบจะพยายามตรวจ 4 มุมกระดาษและแก้ภาพเอียงให้อัตโนมัติ
+          </div>
+
+        </div>
+
+
+        <div class="cardx panel">
+
+          <div class="d-flex justify-content-between align-items-center mb-3">
+
+            <div>
+              <div class="summary-title">
+                เอกสารที่สแกน
+              </div>
+
+              <div class="hint">
+                คลิกภาพเพื่อดูตัวอย่าง • Crop ใหม่ได้แต่ละหน้า
+              </div>
+            </div>
+
+            <span
+              id="scanPageCount"
+              class="badge bg-primary"
+            >
+              0 หน้า
+            </span>
+
+          </div>
+
+          <div
+            id="scanGrid"
+            class="scanner-grid"
+          ></div>
+
+          <div
+            id="scanEmpty"
+            class="empty"
+          >
+            ยังไม่มีภาพสแกน
+          </div>
+
+        </div>
+
+      </div>
+
+
+      <div class="col-lg-4">
+
+        <div class="cardx right-card">
+
+          <div class="summary-title">
+            ส่งออก / ส่งไปยังการรวม PDF
+          </div>
+
+          <div class="stat">
+            <span>จำนวนหน้า</span>
+            <strong id="scanExportCount">0</strong>
+          </div>
+
+          <label class="form-label mt-3">
+            ขนาดกระดาษ PDF
           </label>
+
+          <select
+            id="scanPaper"
+            class="form-select"
+          >
+            <option value="a4" selected>A4</option>
+            <option value="letter">Letter</option>
+            <option value="auto">ขนาดตามภาพ</option>
+          </select>
+
+          <label class="form-label mt-3">
+            ชื่อไฟล์
+          </label>
+
+          <div class="input-group">
+            <input
+              id="scanFilename"
+              class="form-control"
+              value="เอกสารสแกน"
+            >
+            <span class="input-group-text">.pdf</span>
+          </div>
+
+          <button
+            id="scanExportBtn"
+            class="btn btn-primary w-100 mt-3"
+            type="button"
+          >
+            ⬇ ส่งออก PDF
+          </button>
+
+          <button
+            id="sendToMergeBtn"
+            class="btn btn-outline-success w-100 mt-2"
+            type="button"
+          >
+            ➜ ส่งไปยัง “รวม PDF”
+          </button>
 
           <button
             id="autoCropAllBtn"
-            class="btn btn-outline-success"
+            class="btn btn-outline-primary w-100 mt-2"
             type="button"
           >
-            Auto Crop ทั้งหมด
+            ✨ Auto Crop ทุกหน้า
           </button>
 
           <button
-            id="clearAllBtn"
-            class="btn btn-outline-danger"
+            id="clearScanBtn"
+            class="btn btn-outline-danger w-100 mt-2"
             type="button"
           >
-            ล้างทั้งหมด
+            ล้างภาพสแกน
           </button>
 
-        </div>
+          <div
+            id="scanRightStatus"
+            class="hint text-center mt-3"
+          ></div>
 
-        <div class="tip mt-2">
-          Auto Crop จะพยายามตรวจ 4 มุมกระดาษและแก้ภาพเอียง หากตรวจไม่เจอจะใช้ภาพเดิม
-        </div>
+          <hr>
 
-      </div>
-
-
-      <div class="cardx panel">
-
-        <div class="d-flex justify-content-between align-items-center mb-3">
-          <div>
-            <div style="font-size:18px;font-weight:700">
-              เอกสารที่สแกน
-            </div>
-            <div class="tip">
-              ลากลำดับด้วยปุ่ม ↑ ↓ • คลิกภาพเพื่อดูตัวอย่าง
-            </div>
+          <div class="hint">
+            กล้องใช้ตรงจากเบราว์เซอร์ ภาพไม่ถูกอัปโหลดไป Google Drive จนกว่าคุณจะส่งออกเอง
           </div>
 
-          <span
-            id="pageCount"
-            class="badge bg-primary"
-          >
-            0 หน้า
-          </span>
-        </div>
-
-        <div
-          id="scanGrid"
-          class="scan-grid"
-        ></div>
-
-        <div
-          id="scanEmpty"
-          class="empty"
-        >
-          ยังไม่มีเอกสาร
         </div>
 
       </div>
 
     </div>
 
+  </section>
 
-    <div class="col-lg-4">
-
-      <div class="cardx panel right-card">
-
-        <div style="font-size:18px;font-weight:700">
-          ส่งออก PDF
-        </div>
-
-        <div class="stat">
-          <span>จำนวนหน้า</span>
-          <strong id="exportPageCount">0</strong>
-        </div>
-
-        <div class="stat">
-          <span>รูปแบบ</span>
-          <strong id="exportModeLabel">Document</strong>
-        </div>
-
-        <label class="form-label mt-3">
-          ชื่อไฟล์
-        </label>
-
-        <div class="input-group">
-          <input
-            id="filenameInput"
-            class="form-control"
-            value="เอกสารสแกน"
-          >
-          <span class="input-group-text">.pdf</span>
-        </div>
-
-        <button
-          id="exportBtn"
-          class="btn btn-primary w-100 mt-3"
-          type="button"
-        >
-          ⬇ ส่งออก PDF
-        </button>
-
-        <div
-          id="status"
-          class="tip text-center mt-3"
-        ></div>
-
-        <hr>
-
-        <div class="tip">
-          ไฟล์ภาพที่อัปโหลดหรือถ่ายจะอยู่ในหน้านี้จนกว่าจะกด “ล้างทั้งหมด”
-        </div>
-
-      </div>
-
-    </div>
-
-  </div>
 </div>
 
 
-<!-- PREVIEW -->
+<!-- =======================================================
+     PREVIEW MODAL
+======================================================= -->
 
 <div
-  id="previewOverlay"
-  class="preview-overlay"
+  id="previewModal"
+  class="preview-modal"
 >
   <div class="preview-box">
 
-    <div class="preview-top">
+    <div class="preview-head">
+
       <div
         id="previewTitle"
-        style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"
+        style="font-weight:600;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"
       >
         ตัวอย่าง
       </div>
@@ -532,13 +1021,16 @@
       >
         ปิด
       </button>
+
     </div>
 
-    <div class="preview-body">
-      <img id="previewImage" alt="preview">
-    </div>
+    <div
+      id="previewBody"
+      class="preview-body"
+    ></div>
 
     <div class="preview-bottom">
+
       <button
         id="previewPrevBtn"
         class="btn btn-sm btn-outline-light"
@@ -547,12 +1039,12 @@
         ‹
       </button>
 
-      <span
+      <div
         id="previewIndex"
-        style="color:#fff;min-width:110px;text-align:center"
+        class="preview-index"
       >
         1 / 1
-      </span>
+      </div>
 
       <button
         id="previewNextBtn"
@@ -561,6 +1053,7 @@
       >
         ›
       </button>
+
     </div>
 
   </div>
@@ -570,19 +1063,91 @@
 <script>
   const { PDFDocument } = PDFLib;
 
-  const state = {
+
+  /* ========================================================
+     APP STATE
+  ======================================================== */
+
+  const mergeState = {
+    files: [],
+    queue: []
+  };
+
+
+  const scanState = {
     pages: [],
     previewIndex: -1
   };
 
+
   let cameraStream = null;
+  let previewObjectUrl = null;
+
+
+  /* ========================================================
+     DOM
+  ======================================================== */
 
   const el = {
+    mergeTabBtn:
+      document.getElementById('mergeTabBtn'),
+
+    scanTabBtn:
+      document.getElementById('scanTabBtn'),
+
+    mergePanel:
+      document.getElementById('mergePanel'),
+
+    scanPanel:
+      document.getElementById('scanPanel'),
+
+    pdfFileInput:
+      document.getElementById('pdfFileInput'),
+
+    pdfDropzone:
+      document.getElementById('pdfDropzone'),
+
+    addPdfBtn:
+      document.getElementById('addPdfBtn'),
+
+    selectAllPdfBtn:
+      document.getElementById('selectAllPdfBtn'),
+
+    clearAllPdfBtn:
+      document.getElementById('clearAllPdfBtn'),
+
+    clearPdfFilesBtn:
+      document.getElementById('clearPdfFilesBtn'),
+
+    pdfFilesArea:
+      document.getElementById('pdfFilesArea'),
+
+    pdfEmptyState:
+      document.getElementById('pdfEmptyState'),
+
+    pdfFileCount:
+      document.getElementById('pdfFileCount'),
+
+    pdfSelectedCount:
+      document.getElementById('pdfSelectedCount'),
+
+    pdfQueue:
+      document.getElementById('pdfQueue'),
+
+    reversePdfBtn:
+      document.getElementById('reversePdfBtn'),
+
+    pdfFilename:
+      document.getElementById('pdfFilename'),
+
+    pdfExportBtn:
+      document.getElementById('pdfExportBtn'),
+
+    pdfStatus:
+      document.getElementById('pdfStatus'),
+
     startCameraBtn:
       document.getElementById('startCameraBtn'),
-
-    captureBtn:
-      document.getElementById('captureBtn'),
 
     stopCameraBtn:
       document.getElementById('stopCameraBtn'),
@@ -596,8 +1161,20 @@
     cameraPlaceholder:
       document.getElementById('cameraPlaceholder'),
 
-    imageInput:
-      document.getElementById('imageInput'),
+    cameraLiveBadge:
+      document.getElementById('cameraLiveBadge'),
+
+    shutterBtn:
+      document.getElementById('shutterBtn'),
+
+    scanMode:
+      document.getElementById('scanMode'),
+
+    scanImportBtn:
+      document.getElementById('scanImportBtn'),
+
+    scanImageInput:
+      document.getElementById('scanImageInput'),
 
     scanGrid:
       document.getElementById('scanGrid'),
@@ -605,41 +1182,41 @@
     scanEmpty:
       document.getElementById('scanEmpty'),
 
-    pageCount:
-      document.getElementById('pageCount'),
+    scanPageCount:
+      document.getElementById('scanPageCount'),
 
-    exportPageCount:
-      document.getElementById('exportPageCount'),
+    scanExportCount:
+      document.getElementById('scanExportCount'),
 
-    exportModeLabel:
-      document.getElementById('exportModeLabel'),
+    scanPaper:
+      document.getElementById('scanPaper'),
 
-    paperSelect:
-      document.getElementById('paperSelect'),
+    scanFilename:
+      document.getElementById('scanFilename'),
 
-    modeSelect:
-      document.getElementById('modeSelect'),
+    scanExportBtn:
+      document.getElementById('scanExportBtn'),
 
-    filenameInput:
-      document.getElementById('filenameInput'),
-
-    exportBtn:
-      document.getElementById('exportBtn'),
-
-    status:
-      document.getElementById('status'),
+    sendToMergeBtn:
+      document.getElementById('sendToMergeBtn'),
 
     autoCropAllBtn:
       document.getElementById('autoCropAllBtn'),
 
-    clearAllBtn:
-      document.getElementById('clearAllBtn'),
+    clearScanBtn:
+      document.getElementById('clearScanBtn'),
 
-    previewOverlay:
-      document.getElementById('previewOverlay'),
+    scanStatus:
+      document.getElementById('scanStatus'),
 
-    previewImage:
-      document.getElementById('previewImage'),
+    scanRightStatus:
+      document.getElementById('scanRightStatus'),
+
+    previewModal:
+      document.getElementById('previewModal'),
+
+    previewBody:
+      document.getElementById('previewBody'),
 
     previewTitle:
       document.getElementById('previewTitle'),
@@ -658,21 +1235,24 @@
   };
 
 
-  /*
-   * ========================================================
-   * UTIL
-   * ========================================================
-   */
+  /* ========================================================
+     COMMON HELPERS
+  ======================================================== */
 
-  function uid() {
+  function uid(prefix='id'){
     return (
-      Date.now().toString(36) +
-      Math.random().toString(36).slice(2)
+      prefix +
+      '_' +
+      Date.now() +
+      '_' +
+      Math.random()
+        .toString(36)
+        .slice(2,8)
     );
   }
 
 
-  function escapeHtml(value) {
+  function escapeHtml(value){
     return String(value)
       .replaceAll('&','&amp;')
       .replaceAll('<','&lt;')
@@ -682,78 +1262,1216 @@
   }
 
 
-  function safeName(name) {
-    return String(name || '')
-      .replace(/[\\/:*?"<>|]/g,'-')
-      .replace(/\s+/g,' ')
-      .trim()
-      .slice(0,150) || 'เอกสารสแกน';
+  function safeName(value){
+    return (
+      String(value || '')
+        .replace(/[\\/:*?"<>|]/g,'-')
+        .replace(/\s+/g,' ')
+        .trim()
+        .slice(0,150)
+        || 'เอกสาร'
+    );
   }
 
 
-  function blobFromDataUrl(dataUrl) {
-    const parts = dataUrl.split(',');
-    const mime =
-      parts[0]
-        .match(/:(.*?);/)[1];
+  function formatBytes(bytes){
+    if(!bytes) return '0 B';
+
+    const units = ['B','KB','MB','GB'];
+    const i = Math.floor(
+      Math.log(bytes) / Math.log(1024)
+    );
+
+    return (
+      (
+        bytes /
+        Math.pow(1024,i)
+      ).toFixed(i ? 1 : 0)
+      + ' ' +
+      units[i]
+    );
+  }
+
+
+  function dataUrlToBytes(dataUrl){
+    const base64 =
+      dataUrl.split(',')[1];
 
     const binary =
-      atob(parts[1]);
+      atob(base64);
 
     const bytes =
-      new Uint8Array(
-        binary.length
-      );
+      new Uint8Array(binary.length);
 
-    for (
-      let i = 0;
-      i < binary.length;
-      i++
-    ) {
+    for(let i=0;i<binary.length;i++){
       bytes[i] =
         binary.charCodeAt(i);
     }
 
-    return new Blob(
-      [bytes],
-      { type:mime }
+    return bytes;
+  }
+
+
+  function loadImage(src){
+    return new Promise(
+      (resolve,reject)=>{
+        const img = new Image();
+
+        img.onload =
+          () => resolve(img);
+
+        img.onerror =
+          () =>
+            reject(
+              new Error(
+                'โหลดรูปไม่สำเร็จ'
+              )
+            );
+
+        img.src = src;
+      }
     );
   }
 
 
-  function dataUrlFromCanvas(
-    canvas,
-    quality = .92
-  ) {
-    return canvas.toDataURL(
-      'image/jpeg',
-      quality
+  function setScanStatus(message){
+    el.scanStatus.textContent =
+      message || '';
+  }
+
+
+  /* ========================================================
+     TABS
+  ======================================================== */
+
+  function openTab(name){
+
+    const merge =
+      name === 'merge';
+
+    el.mergeTabBtn
+      .classList.toggle(
+        'active',
+        merge
+      );
+
+    el.scanTabBtn
+      .classList.toggle(
+        'active',
+        !merge
+      );
+
+    el.mergePanel
+      .classList.toggle(
+        'active',
+        merge
+      );
+
+    el.scanPanel
+      .classList.toggle(
+        'active',
+        !merge
+      );
+
+  }
+
+
+  el.mergeTabBtn.onclick =
+    () => openTab('merge');
+
+  el.scanTabBtn.onclick =
+    () => openTab('scan');
+
+
+  /* ========================================================
+     MERGE PDF
+  ======================================================== */
+
+  async function addPdfFiles(fileList){
+
+    const files =
+      Array.from(fileList || [])
+        .filter(
+          file =>
+            file.type === 'application/pdf' ||
+            file.name
+              .toLowerCase()
+              .endsWith('.pdf')
+        );
+
+    if(!files.length) return;
+
+
+    el.pdfStatus.textContent =
+      'กำลังอ่าน PDF...';
+
+
+    for(const file of files){
+
+      try{
+
+        const bytes =
+          await file.arrayBuffer();
+
+        const pdfDoc =
+          await PDFDocument.load(
+            bytes,
+            {
+              ignoreEncryption:false
+            }
+          );
+
+        mergeState.files.push({
+
+          id:uid('pdf'),
+
+          name:file.name,
+
+          size:file.size,
+
+          bytes:bytes,
+
+          pdfDoc:pdfDoc,
+
+          pageCount:
+            pdfDoc.getPageCount(),
+
+          selected:
+            new Set()
+
+        });
+
+      }catch(error){
+
+        alert(
+          'เปิด PDF ไม่สำเร็จ\n\n' +
+          file.name +
+          '\n\n' +
+          (
+            error.message ||
+            error
+          )
+        );
+
+      }
+
+    }
+
+
+    el.pdfFileInput.value = '';
+
+    el.pdfStatus.textContent = '';
+
+    renderMerge();
+
+  }
+
+
+  function removePdfFile(fileId){
+
+    mergeState.files =
+      mergeState.files.filter(
+        f => f.id !== fileId
+      );
+
+    mergeState.queue =
+      mergeState.queue.filter(
+        q => q.fileId !== fileId
+      );
+
+    renderMerge();
+
+  }
+
+
+  function toggleMergePage(
+    fileId,
+    pageIndex
+  ){
+
+    const file =
+      mergeState.files.find(
+        f => f.id === fileId
+      );
+
+    if(!file) return;
+
+
+    if(
+      file.selected.has(
+        pageIndex
+      )
+    ){
+
+      file.selected.delete(
+        pageIndex
+      );
+
+      mergeState.queue =
+        mergeState.queue.filter(
+          q =>
+            !(
+              q.fileId === fileId &&
+              q.pageIndex === pageIndex
+            )
+        );
+
+    }else{
+
+      file.selected.add(
+        pageIndex
+      );
+
+      mergeState.queue.push({
+        fileId,
+        pageIndex
+      });
+
+    }
+
+
+    renderMerge();
+
+  }
+
+
+  function renderMerge(){
+
+    el.pdfEmptyState.style.display =
+      mergeState.files.length
+        ? 'none'
+        : '';
+
+    el.pdfFilesArea.innerHTML = '';
+
+
+    el.pdfFileCount.textContent =
+      mergeState.files.length;
+
+    el.pdfSelectedCount.textContent =
+      mergeState.queue.length;
+
+
+    mergeState.files.forEach(
+      file => {
+
+        const card =
+          document.createElement('div');
+
+        card.className =
+          'cardx file-card';
+
+
+        card.innerHTML = `
+
+          <div class="file-head">
+
+            <div class="file-info">
+
+              <div class="pdf-badge">
+                PDF
+              </div>
+
+              <div style="min-width:0">
+
+                <div
+                  class="file-name"
+                  title="${escapeHtml(file.name)}"
+                >
+                  ${escapeHtml(file.name)}
+                </div>
+
+                <div class="file-meta">
+                  ${formatBytes(file.size)}
+                  • ${file.pageCount} หน้า
+                  • เลือก ${file.selected.size}
+                </div>
+
+              </div>
+
+            </div>
+
+            <button
+              type="button"
+              class="btn btn-sm btn-outline-danger mini-btn"
+              data-remove-file
+            >
+              ลบ
+            </button>
+
+          </div>
+
+          <div
+            class="page-grid"
+            data-page-grid
+          ></div>
+
+        `;
+
+
+        card
+          .querySelector(
+            '[data-remove-file]'
+          )
+          .onclick =
+            () =>
+              removePdfFile(
+                file.id
+              );
+
+
+        const grid =
+          card.querySelector(
+            '[data-page-grid]'
+          );
+
+
+        for(
+          let i=0;
+          i<file.pageCount;
+          i++
+        ){
+
+          const item =
+            document.createElement('div');
+
+
+          const selected =
+            file.selected.has(i);
+
+
+          item.className =
+            'page-item' +
+            (
+              selected
+                ? ' selected'
+                : ''
+            );
+
+
+          item.innerHTML = `
+
+            <input
+              class="page-check"
+              type="checkbox"
+              ${selected ? 'checked' : ''}
+            >
+
+            <div class="page-number">
+              ${i+1}
+            </div>
+
+            <div class="page-caption">
+              ${
+                selected
+                  ? 'เลือกแล้ว • คลิกดู'
+                  : 'คลิกเพื่อดู'
+              }
+            </div>
+
+          `;
+
+
+          item.onclick =
+            event => {
+
+              if(
+                event.target.matches(
+                  '.page-check'
+                )
+              ){
+
+                toggleMergePage(
+                  file.id,
+                  i
+                );
+
+                return;
+
+              }
+
+
+              openMergePreview(
+                file.id,
+                i
+              );
+
+            };
+
+
+          grid.appendChild(item);
+
+        }
+
+
+        el.pdfFilesArea.appendChild(
+          card
+        );
+
+      }
     );
+
+
+    renderMergeQueue();
+
   }
 
 
-  function setStatus(text) {
-    el.status.textContent = text || '';
+  function renderMergeQueue(){
+
+    el.pdfQueue.innerHTML = '';
+
+
+    if(
+      !mergeState.queue.length
+    ){
+
+      el.pdfQueue.innerHTML =
+        `
+        <div class="hint text-center py-3">
+          ยังไม่มีหน้าที่เลือก
+        </div>
+        `;
+
+      return;
+    }
+
+
+    mergeState.queue.forEach(
+      (q,index)=>{
+
+        const file =
+          mergeState.files.find(
+            f =>
+              f.id === q.fileId
+          );
+
+        if(!file) return;
+
+
+        const row =
+          document.createElement('div');
+
+        row.className =
+          'queue-item';
+
+
+        row.innerHTML = `
+
+          <div class="queue-no">
+            ${index+1}
+          </div>
+
+          <div
+            class="queue-text"
+            title="คลิกเพื่อดูตัวอย่าง"
+          >
+
+            <div class="queue-main">
+              ${escapeHtml(file.name)}
+            </div>
+
+            <div class="queue-sub">
+              หน้า ${q.pageIndex+1}
+            </div>
+
+          </div>
+
+          <div class="queue-actions d-flex gap-1">
+
+            <button
+              type="button"
+              class="btn btn-sm btn-outline-secondary"
+              data-up
+            >
+              ↑
+            </button>
+
+            <button
+              type="button"
+              class="btn btn-sm btn-outline-secondary"
+              data-down
+            >
+              ↓
+            </button>
+
+            <button
+              type="button"
+              class="btn btn-sm btn-outline-danger"
+              data-delete
+            >
+              ×
+            </button>
+
+          </div>
+
+        `;
+
+
+        row.querySelector(
+          '[data-up]'
+        ).onclick =
+          () =>
+            moveMergeQueue(
+              index,
+              -1
+            );
+
+
+        row.querySelector(
+          '[data-down]'
+        ).onclick =
+          () =>
+            moveMergeQueue(
+              index,
+              1
+            );
+
+
+        row.querySelector(
+          '[data-delete]'
+        ).onclick =
+          () =>
+            removeMergeQueue(index);
+
+
+        row.querySelector(
+          '.queue-text'
+        ).onclick =
+          () =>
+            openMergePreview(
+              q.fileId,
+              q.pageIndex,
+              index
+            );
+
+
+        el.pdfQueue.appendChild(
+          row
+        );
+
+      }
+    );
+
   }
 
 
-  /*
-   * ========================================================
-   * CAMERA
-   * ========================================================
-   */
+  function moveMergeQueue(
+    index,
+    delta
+  ){
 
-  async function startCamera() {
+    const next =
+      index + delta;
 
-    try {
 
-      if (
+    if(
+      next < 0 ||
+      next >=
+        mergeState.queue.length
+    ) return;
+
+
+    [
+      mergeState.queue[index],
+      mergeState.queue[next]
+    ] =
+    [
+      mergeState.queue[next],
+      mergeState.queue[index]
+    ];
+
+
+    renderMergeQueue();
+
+  }
+
+
+  function removeMergeQueue(index){
+
+    const q =
+      mergeState.queue[index];
+
+    if(!q) return;
+
+
+    const file =
+      mergeState.files.find(
+        f =>
+          f.id === q.fileId
+      );
+
+
+    if(file){
+
+      file.selected.delete(
+        q.pageIndex
+      );
+
+    }
+
+
+    mergeState.queue.splice(
+      index,
+      1
+    );
+
+
+    renderMerge();
+
+  }
+
+
+  function selectAllPdfPages(){
+
+    mergeState.files.forEach(
+      file => {
+
+        for(
+          let i=0;
+          i<file.pageCount;
+          i++
+        ){
+
+          if(
+            !file.selected.has(i)
+          ){
+
+            file.selected.add(i);
+
+            mergeState.queue.push({
+              fileId:file.id,
+              pageIndex:i
+            });
+
+          }
+
+        }
+
+      }
+    );
+
+
+    renderMerge();
+
+  }
+
+
+  function clearAllPdfPages(){
+
+    mergeState.files.forEach(
+      file =>
+        file.selected.clear()
+    );
+
+    mergeState.queue = [];
+
+    renderMerge();
+
+  }
+
+
+  async function exportMergePdf(){
+
+    if(
+      !mergeState.queue.length
+    ){
+
+      alert(
+        'กรุณาเลือกอย่างน้อย 1 หน้า'
+      );
+
+      return;
+
+    }
+
+
+    const filename =
+      safeName(
+        el.pdfFilename.value
+      );
+
+
+    el.pdfExportBtn.disabled =
+      true;
+
+    el.pdfStatus.textContent =
+      'กำลังสร้าง PDF...';
+
+
+    try{
+
+      const out =
+        await PDFDocument.create();
+
+
+      const grouped =
+        new Map();
+
+
+      mergeState.queue.forEach(
+        (item,orderIndex)=>{
+
+          if(
+            !grouped.has(
+              item.fileId
+            )
+          ){
+
+            grouped.set(
+              item.fileId,
+              []
+            );
+
+          }
+
+
+          grouped
+            .get(item.fileId)
+            .push({
+              pageIndex:
+                item.pageIndex,
+              orderIndex:
+                orderIndex
+            });
+
+        }
+      );
+
+
+      const byOrder =
+        new Array(
+          mergeState.queue.length
+        );
+
+
+      for(
+        const [
+          fileId,
+          requests
+        ]
+        of grouped.entries()
+      ){
+
+        const file =
+          mergeState.files.find(
+            f =>
+              f.id === fileId
+          );
+
+
+        if(!file) continue;
+
+
+        const uniquePages =
+          [
+            ...new Set(
+              requests.map(
+                r => r.pageIndex
+              )
+            )
+          ];
+
+
+        const imported =
+          await out.copyPages(
+            file.pdfDoc,
+            uniquePages
+          );
+
+
+        const pageMap =
+          new Map();
+
+
+        uniquePages.forEach(
+          (pageNumber,i) =>
+            pageMap.set(
+              pageNumber,
+              imported[i]
+            )
+        );
+
+
+        requests.forEach(
+          r =>
+            byOrder[
+              r.orderIndex
+            ] =
+              pageMap.get(
+                r.pageIndex
+              )
+        );
+
+      }
+
+
+      byOrder.forEach(
+        page => {
+
+          if(page){
+            out.addPage(page);
+          }
+
+        }
+      );
+
+
+      const bytes =
+        await out.save({
+          useObjectStreams:true,
+          addDefaultPage:false
+        });
+
+
+      downloadBytes(
+        bytes,
+        filename + '.pdf',
+        'application/pdf'
+      );
+
+
+      el.pdfStatus.textContent =
+        `ส่งออกสำเร็จ • ${
+          mergeState.queue.length
+        } หน้า`;
+
+    }catch(error){
+
+      console.error(error);
+
+      alert(
+        'รวม PDF ไม่สำเร็จ\n\n' +
+        (
+          error.message ||
+          error
+        )
+      );
+
+      el.pdfStatus.textContent =
+        '';
+
+    }finally{
+
+      el.pdfExportBtn.disabled =
+        false;
+
+    }
+
+  }
+
+
+  async function addScannerPdfToMerge(){
+
+    if(
+      !scanState.pages.length
+    ){
+
+      alert(
+        'ยังไม่มีหน้าสแกน'
+      );
+
+      return;
+
+    }
+
+
+    setScanStatus(
+      'กำลังสร้าง PDF จากภาพสแกน...'
+    );
+
+
+    try{
+
+      const bytes =
+        await createPdfFromScanPages();
+
+
+      const pdfDoc =
+        await PDFDocument.load(bytes);
+
+
+      mergeState.files.push({
+
+        id:
+          uid('scanpdf'),
+
+        name:
+          safeName(
+            el.scanFilename.value
+          ) +
+          '.pdf',
+
+        size:
+          bytes.byteLength,
+
+        bytes:
+          bytes,
+
+        pdfDoc:
+          pdfDoc,
+
+        pageCount:
+          pdfDoc.getPageCount(),
+
+        selected:
+          new Set()
+
+      });
+
+
+      renderMerge();
+
+
+      setScanStatus(
+        'เพิ่มเข้า “รวม PDF” แล้ว'
+      );
+
+
+      openTab('merge');
+
+    }catch(error){
+
+      console.error(error);
+
+      alert(
+        'ส่งเข้า “รวม PDF” ไม่สำเร็จ\n\n' +
+        (
+          error.message ||
+          error
+        )
+      );
+
+    }
+
+  }
+
+
+  function downloadBytes(
+    bytes,
+    filename,
+    mime
+  ){
+
+    const blob =
+      new Blob(
+        [bytes],
+        {type:mime}
+      );
+
+
+    const url =
+      URL.createObjectURL(blob);
+
+
+    const a =
+      document.createElement('a');
+
+
+    a.href = url;
+
+    a.download = filename;
+
+
+    document.body.appendChild(a);
+
+    a.click();
+
+    a.remove();
+
+
+    setTimeout(
+      () =>
+        URL.revokeObjectURL(url),
+      30000
+    );
+
+  }
+
+
+  /* ========================================================
+     MERGE PREVIEW
+     ใช้ iframe + PDF ใหม่ 1 หน้า
+     ไม่มี Canvas
+  ======================================================== */
+
+  async function openMergePreview(
+    fileId,
+    pageIndex,
+    queueIndex = -1
+  ){
+
+    const file =
+      mergeState.files.find(
+        f =>
+          f.id === fileId
+      );
+
+    if(!file) return;
+
+
+    try{
+
+      const single =
+        await PDFDocument.create();
+
+
+      const pages =
+        await single.copyPages(
+          file.pdfDoc,
+          [pageIndex]
+        );
+
+
+      single.addPage(
+        pages[0]
+      );
+
+
+      const bytes =
+        await single.save();
+
+
+      const blob =
+        new Blob(
+          [bytes],
+          {
+            type:'application/pdf'
+          }
+        );
+
+
+      if(previewObjectUrl){
+        URL.revokeObjectURL(
+          previewObjectUrl
+        );
+      }
+
+
+      previewObjectUrl =
+        URL.createObjectURL(blob);
+
+
+      el.previewBody.innerHTML = `
+
+        <iframe
+          class="preview-frame"
+          src="${previewObjectUrl}#toolbar=1&navpanes=0&view=FitH"
+        ></iframe>
+
+      `;
+
+
+      el.previewTitle.textContent =
+        `${file.name} • หน้า ${pageIndex+1}`;
+
+
+      el.previewIndex.textContent =
+        queueIndex >= 0
+          ? `${queueIndex+1} / ${mergeState.queue.length}`
+          : `หน้า ${pageIndex+1}`;
+
+
+      /*
+       * preview prev/next ผ่าน queue
+       */
+
+      el.previewPrevBtn.onclick =
+        () => {
+
+          if(
+            queueIndex < 0
+          ) return;
+
+
+          const next =
+            queueIndex - 1;
+
+
+          if(
+            next < 0
+          ) return;
+
+
+          const q =
+            mergeState.queue[next];
+
+
+          openMergePreview(
+            q.fileId,
+            q.pageIndex,
+            next
+          );
+
+        };
+
+
+      el.previewNextBtn.onclick =
+        () => {
+
+          if(
+            queueIndex < 0
+          ) return;
+
+
+          const next =
+            queueIndex + 1;
+
+
+          if(
+            next >=
+              mergeState.queue.length
+          ) return;
+
+
+          const q =
+            mergeState.queue[next];
+
+
+          openMergePreview(
+            q.fileId,
+            q.pageIndex,
+            next
+          );
+
+        };
+
+
+      el.previewModal
+        .classList
+        .add('show');
+
+
+    }catch(error){
+
+      alert(
+        'เปิดตัวอย่างไม่สำเร็จ\n\n' +
+        (
+          error.message ||
+          error
+        )
+      );
+
+    }
+
+  }
+
+
+  /* ========================================================
+     SCANNER CAMERA
+  ======================================================== */
+
+  async function startCamera(){
+
+    try{
+
+      if(
         !navigator.mediaDevices ||
         !navigator.mediaDevices.getUserMedia
-      ) {
+      ){
 
         throw new Error(
-          'เบราว์เซอร์นี้ไม่รองรับการเปิดกล้อง'
+          'เบราว์เซอร์ไม่รองรับกล้อง'
         );
 
       }
@@ -762,20 +2480,20 @@
       cameraStream =
         await navigator.mediaDevices.getUserMedia({
 
-          video: {
-
-            facingMode: {
-              ideal: 'environment'
+          video:{
+            facingMode:{
+              ideal:'environment'
             },
 
-            width: {
-              ideal: 1920
+            width:{
+              ideal:1920
             },
 
-            height: {
-              ideal: 1080
-            }
+            height:{
+              ideal:1080
+            },
 
+            focusMode:'continuous'
           },
 
           audio:false
@@ -786,30 +2504,48 @@
       el.cameraVideo.srcObject =
         cameraStream;
 
+
       el.cameraVideo.style.display =
         'block';
+
 
       el.cameraPlaceholder.style.display =
         'none';
 
-      el.captureBtn.disabled =
-        false;
 
-      el.stopCameraBtn.disabled =
-        false;
+      el.cameraLiveBadge
+        .classList
+        .add('show');
+
+
+      el.shutterBtn
+        .classList
+        .add('active');
+
 
       el.startCameraBtn.disabled =
         true;
 
-      setStatus(
-        'กล้องพร้อมใช้งาน'
+
+      el.stopCameraBtn.disabled =
+        false;
+
+
+      setScanStatus(
+        'กล้องพร้อมใช้งาน • กดปุ่มวงกลมเพื่อถ่าย'
       );
 
-    } catch (error) {
+
+    }catch(error){
+
+      console.error(error);
 
       alert(
         'เปิดกล้องไม่สำเร็จ\n\n' +
-        (error.message || error)
+        (
+          error.message ||
+          error
+        )
       );
 
     }
@@ -817,11 +2553,9 @@
   }
 
 
-  function stopCamera() {
+  function stopCamera(){
 
-    if (
-      cameraStream
-    ) {
+    if(cameraStream){
 
       cameraStream
         .getTracks()
@@ -839,35 +2573,72 @@
     el.cameraVideo.srcObject =
       null;
 
+
     el.cameraVideo.style.display =
       'none';
+
 
     el.cameraPlaceholder.style.display =
       'block';
 
-    el.captureBtn.disabled =
-      true;
 
-    el.stopCameraBtn.disabled =
-      true;
+    el.cameraLiveBadge
+      .classList
+      .remove('show');
+
+
+    el.shutterBtn
+      .classList
+      .remove('active');
+
 
     el.startCameraBtn.disabled =
       false;
 
+
+    el.stopCameraBtn.disabled =
+      true;
+
+
+    setScanStatus(
+      'กล้องปิดแล้ว'
+    );
+
   }
 
 
-  async function captureCamera() {
+  async function captureFromCamera(){
 
-    if (
+    if(
       !cameraStream
-    ) {
+    ){
+
+      alert(
+        'กรุณาเปิดกล้องก่อน'
+      );
+
       return;
+
     }
 
 
     const video =
       el.cameraVideo;
+
+
+    if(
+      !video.videoWidth ||
+      !video.videoHeight
+    ){
+
+      alert(
+        'กล้องยังไม่พร้อม กรุณารอสักครู่'
+      );
+
+      return;
+
+    }
+
 
     const canvas =
       el.cameraCanvas;
@@ -875,6 +2646,7 @@
 
     canvas.width =
       video.videoWidth;
+
 
     canvas.height =
       video.videoHeight;
@@ -898,29 +2670,100 @@
     );
 
 
-    const source =
+    const dataUrl =
       canvas.toDataURL(
         'image/jpeg',
-        .95
+        .96
       );
 
 
-    await addScannedImage(
-      source,
-      'กล้อง'
+    setScanStatus(
+      'กำลังตรวจขอบกระดาษ...'
+    );
+
+
+    await addScanImage(
+      dataUrl,
+      `ภาพจากกล้อง ${scanState.pages.length+1}`
+    );
+
+
+    setScanStatus(
+      'ถ่ายสำเร็จ • สามารถถ่ายหน้าต่อไปได้'
     );
 
   }
 
 
-  /*
-   * ========================================================
-   * IMAGE IMPORT
-   * ========================================================
-   */
+  /* ========================================================
+     OPENCV READY
+  ======================================================== */
 
-  el.imageInput.addEventListener(
-    'change',
+  function waitForOpenCV(
+    timeoutMs=15000
+  ){
+
+    return new Promise(
+      (resolve,reject)=>{
+
+        const start =
+          Date.now();
+
+
+        const timer =
+          setInterval(
+            () => {
+
+              if(
+                window.cv &&
+                cv.Mat
+              ){
+
+                clearInterval(timer);
+
+                resolve(cv);
+
+                return;
+
+              }
+
+
+              if(
+                Date.now() -
+                start >
+                timeoutMs
+              ){
+
+                clearInterval(timer);
+
+                reject(
+                  new Error(
+                    'OpenCV ยังโหลดไม่เสร็จ'
+                  )
+                );
+
+              }
+
+            },
+            120
+          );
+
+      }
+    );
+
+  }
+
+
+  /* ========================================================
+     IMPORT IMAGES
+  ======================================================== */
+
+  el.scanImportBtn.onclick =
+    () =>
+      el.scanImageInput.click();
+
+
+  el.scanImageInput.onchange =
     async event => {
 
       const files =
@@ -929,40 +2772,30 @@
         );
 
 
-      if (!files.length) {
-        return;
-      }
+      if(
+        !files.length
+      ) return;
 
 
-      setStatus(
+      setScanStatus(
         'กำลังนำเข้ารูป...'
       );
 
 
-      for (
+      for(
         const file of files
-      ) {
+      ){
 
-        try {
-
-          const dataUrl =
-            await readFileAsDataUrl(
-              file
-            );
-
-
-          await addScannedImage(
-            dataUrl,
-            file.name
+        const dataUrl =
+          await readFileAsDataUrl(
+            file
           );
 
-        } catch (error) {
 
-          console.error(
-            error
-          );
-
-        }
+        await addScanImage(
+          dataUrl,
+          file.name
+        );
 
       }
 
@@ -970,19 +2803,18 @@
       event.target.value =
         '';
 
-      setStatus('');
 
-    }
-  );
+      setScanStatus(
+        'นำเข้าเรียบร้อย'
+      );
+
+    };
 
 
-  function readFileAsDataUrl(file) {
+  function readFileAsDataUrl(file){
 
     return new Promise(
-      (
-        resolve,
-        reject
-      ) => {
+      (resolve,reject)=>{
 
         const reader =
           new FileReader();
@@ -996,12 +2828,15 @@
 
 
         reader.onerror =
-          reject;
+          () =>
+            reject(
+              new Error(
+                'อ่านไฟล์รูปไม่สำเร็จ'
+              )
+            );
 
 
-        reader.readAsDataURL(
-          file
-        );
+        reader.readAsDataURL(file);
 
       }
     );
@@ -1009,224 +2844,214 @@
   }
 
 
-  /*
-   * ========================================================
-   * ADD PAGE
-   * ========================================================
-   */
+  /* ========================================================
+     ADD / PROCESS SCAN IMAGE
+  ======================================================== */
 
-  async function addScannedImage(
+  async function addScanImage(
     dataUrl,
     name
-  ) {
+  ){
 
-    const cropped =
-      await autoCropImage(
+    const crop =
+      await autoCropDocument(
         dataUrl
       );
 
 
     const processed =
-      await applyImageMode(
-        cropped,
-        el.modeSelect.value
+      await applyScanMode(
+        crop.dataUrl,
+        el.scanMode.value
       );
 
 
-    state.pages.push({
+    scanState.pages.push({
 
-      id:uid(),
+      id:
+        uid('scan'),
 
       name:
-
         name ||
+        `หน้า ${scanState.pages.length+1}`,
 
-        `หน้า ${
-          state.pages.length + 1
-        }`,
+      dataUrl:
+        processed,
 
-      dataUrl:processed,
-
-      original:dataUrl
+      detected:
+        crop.detected
 
     });
 
 
-    render();
+    renderScan();
 
   }
 
 
-  /*
-   * ========================================================
-   * AUTO CROP
-   * ========================================================
-   */
+  /* ========================================================
+     AUTO CROP - IMPROVED
+  ======================================================== */
 
-  async function autoCropImage(
+  async function autoCropDocument(
     dataUrl
-  ) {
+  ){
 
-    /*
-     * ถ้า OpenCV ยังไม่โหลด
-     * ให้คืนรูปเดิมก่อน
-     */
+    let cvInstance;
 
-    if (
-      typeof cv === 'undefined' ||
-      !cv.Mat
-    ) {
 
-      return dataUrl;
+    try{
+
+      cvInstance =
+        await waitForOpenCV();
+
+
+    }catch(error){
+
+      console.warn(
+        error.message
+      );
+
+
+      return {
+        dataUrl,
+        detected:false
+      };
 
     }
 
 
-    try {
+    try{
 
       const img =
-        await loadImage(
-          dataUrl
-        );
+        await loadImage(dataUrl);
 
 
-      const maxWidth =
+      const maxSide =
         1800;
 
 
       const scale =
         Math.min(
           1,
-          maxWidth /
-            img.naturalWidth
+          maxSide /
+            Math.max(
+              img.naturalWidth,
+              img.naturalHeight
+            )
         );
 
 
-      const sourceCanvas =
-        document.createElement(
-          'canvas'
-        );
+      const canvas =
+        document.createElement('canvas');
 
 
-      sourceCanvas.width =
+      canvas.width =
         Math.round(
-          img.naturalWidth *
-          scale
+          img.naturalWidth * scale
         );
 
 
-      sourceCanvas.height =
+      canvas.height =
         Math.round(
-          img.naturalHeight *
-          scale
+          img.naturalHeight * scale
         );
 
 
-      const sourceCtx =
-        sourceCanvas.getContext(
+      const ctx =
+        canvas.getContext(
           '2d'
         );
 
 
-      sourceCtx.drawImage(
+      ctx.drawImage(
         img,
         0,
         0,
-        sourceCanvas.width,
-        sourceCanvas.height
+        canvas.width,
+        canvas.height
       );
 
 
-      let src =
-        cv.imread(
-          sourceCanvas
+      const src =
+        cvInstance.imread(
+          canvas
         );
 
 
-      let gray =
-        new cv.Mat();
+      const gray =
+        new cvInstance.Mat();
 
 
-      let blur =
-        new cv.Mat();
+      const blur =
+        new cvInstance.Mat();
 
 
-      let edges =
-        new cv.Mat();
+      const edges =
+        new cvInstance.Mat();
 
 
-      cv.cvtColor(
+      const closed =
+        new cvInstance.Mat();
+
+
+      cvInstance.cvtColor(
         src,
         gray,
-        cv.COLOR_RGBA2GRAY
+        cvInstance.COLOR_RGBA2GRAY
       );
 
 
-      cv.GaussianBlur(
+      cvInstance.GaussianBlur(
         gray,
         blur,
-        new cv.Size(
-          5,
-          5
-        ),
+        new cvInstance.Size(5,5),
         0
       );
 
 
-      cv.Canny(
+      cvInstance.Canny(
         blur,
         edges,
-        60,
-        180
+        50,
+        160
       );
 
 
       /*
-       * ขยายเส้นเล็กน้อย
+       * ปิดช่องว่างของเส้นขอบ
        */
 
-      let kernel =
-        cv.Mat.ones(
-          5,
-          5,
-          cv.CV_8U
+      const kernel =
+        cvInstance.getStructuringElement(
+          cvInstance.MORPH_RECT,
+          new cvInstance.Size(7,7)
         );
 
 
-      let morph =
-        new cv.Mat();
-
-
-      cv.morphologyEx(
+      cvInstance.morphologyEx(
         edges,
-        morph,
-        cv.MORPH_CLOSE,
+        closed,
+        cvInstance.MORPH_CLOSE,
         kernel
       );
 
 
-      let contours =
-        new cv.MatVector();
+      const contours =
+        new cvInstance.MatVector();
 
 
-      let hierarchy =
-        new cv.Mat();
+      const hierarchy =
+        new cvInstance.Mat();
 
 
-      cv.findContours(
-        morph,
+      cvInstance.findContours(
+        closed,
         contours,
         hierarchy,
-        cv.RETR_EXTERNAL,
-        cv.CHAIN_APPROX_SIMPLE
+        cvInstance.RETR_EXTERNAL,
+        cvInstance.CHAIN_APPROX_SIMPLE
       );
-
-
-      let best =
-        null;
-
-      let bestArea =
-        0;
 
 
       const imageArea =
@@ -1234,82 +3059,144 @@
         src.cols;
 
 
-      for (
-        let i = 0;
-        i < contours.size();
+      let bestPoints =
+        null;
+
+      let bestScore =
+        0;
+
+
+      /*
+       * ค้นหา quadrilateral ที่ใหญ่ที่สุด
+       */
+
+      for(
+        let i=0;
+        i<contours.size();
         i++
-      ) {
+      ){
 
         const contour =
           contours.get(i);
 
 
+        const area =
+          Math.abs(
+            cvInstance.contourArea(
+              contour
+            )
+          );
+
+
+        if(
+          area <
+          imageArea * 0.12
+        ){
+
+          contour.delete();
+
+          continue;
+
+        }
+
+
         const perimeter =
-          cv.arcLength(
+          cvInstance.arcLength(
             contour,
             true
           );
 
 
         const approx =
-          new cv.Mat();
+          new cvInstance.Mat();
 
 
-        cv.approxPolyDP(
+        cvInstance.approxPolyDP(
           contour,
           approx,
-          0.02 * perimeter,
+          Math.max(
+            2,
+            0.02 *
+            perimeter
+          ),
           true
         );
 
 
-        const area =
-          Math.abs(
-            cv.contourArea(
-              contour
-            )
-          );
-
-
-        if (
+        if(
           approx.rows === 4 &&
-          area >
-            bestArea &&
-          area >
-            imageArea * 0.15
-        ) {
-
-          bestArea =
-            area;
-
+          cvInstance.isContourConvex(
+            approx
+          )
+        ){
 
           const points = [];
 
-          for (
-            let p = 0;
-            p < 4;
+
+          for(
+            let p=0;
+            p<4;
             p++
-          ) {
+          ){
+
+            const row =
+              approx.intPtr(
+                p,
+                0
+              );
+
 
             points.push({
-
-              x:
-                approx
-                  .intPtr(p,0)[0],
-
-              y:
-                approx
-                  .intPtr(p,0)[1]
-
+              x:row[0],
+              y:row[1]
             });
 
           }
 
 
-          best =
+          const ordered =
             orderCorners(
               points
             );
+
+
+          const rectangularity =
+            area /
+            (
+              cvInstance.boundingRect(
+                contour
+              ).width *
+              cvInstance.boundingRect(
+                contour
+              ).height
+            );
+
+
+          /*
+           * ให้พื้นที่มีน้ำหนักมาก
+           * แต่กัน contour แปลก ๆ
+           */
+
+          const score =
+            area *
+            Math.max(
+              0.1,
+              rectangularity
+            );
+
+
+          if(
+            score >
+            bestScore
+          ){
+
+            bestScore =
+              score;
+
+            bestPoints =
+              ordered;
+
+          }
 
         }
 
@@ -1320,142 +3207,311 @@
       }
 
 
-      contours.delete();
-      hierarchy.delete();
-      kernel.delete();
-      morph.delete();
-      edges.delete();
-      blur.delete();
-      gray.delete();
+      /*
+       * ถ้า Canny ไม่เจอ:
+       * ลอง Threshold พื้นกระดาษ
+       */
+
+      if(
+        !bestPoints
+      ){
+
+        const thresh =
+          new cvInstance.Mat();
 
 
-      if (!best) {
+        cvInstance.threshold(
+          gray,
+          thresh,
+          180,
+          255,
+          cvInstance.THRESH_BINARY
+        );
 
-        src.delete();
 
-        return dataUrl;
+        const threshContours =
+          new cvInstance.MatVector();
+
+
+        const threshHierarchy =
+          new cvInstance.Mat();
+
+
+        cvInstance.findContours(
+          thresh,
+          threshContours,
+          threshHierarchy,
+          cvInstance.RETR_EXTERNAL,
+          cvInstance.CHAIN_APPROX_SIMPLE
+        );
+
+
+        for(
+          let i=0;
+          i<threshContours.size();
+          i++
+        ){
+
+          const contour =
+            threshContours.get(i);
+
+
+          const area =
+            Math.abs(
+              cvInstance.contourArea(
+                contour
+              )
+            );
+
+
+          if(
+            area <
+              imageArea * 0.25
+          ){
+
+            contour.delete();
+
+            continue;
+
+          }
+
+
+          const perimeter =
+            cvInstance.arcLength(
+              contour,
+              true
+            );
+
+
+          const approx =
+            new cvInstance.Mat();
+
+
+          cvInstance.approxPolyDP(
+            contour,
+            approx,
+            Math.max(
+              2,
+              0.025 *
+              perimeter
+            ),
+            true
+          );
+
+
+          if(
+            approx.rows === 4 &&
+            cvInstance.isContourConvex(
+              approx
+            )
+          ){
+
+            const points = [];
+
+
+            for(
+              let p=0;
+              p<4;
+              p++
+            ){
+
+              const row =
+                approx.intPtr(
+                  p,
+                  0
+                );
+
+
+              points.push({
+                x:row[0],
+                y:row[1]
+              });
+
+            }
+
+
+            bestPoints =
+              orderCorners(
+                points
+              );
+
+
+            approx.delete();
+            contour.delete();
+
+            break;
+
+          }
+
+
+          approx.delete();
+          contour.delete();
+
+        }
+
+
+        thresh.delete();
+        threshContours.delete();
+        threshHierarchy.delete();
 
       }
 
 
       /*
-       * Perspective Transform
+       * Clean up
        */
 
-      const widthTop =
+      contours.delete();
+      hierarchy.delete();
+      kernel.delete();
+      closed.delete();
+      edges.delete();
+      blur.delete();
+      gray.delete();
+
+
+      /*
+       * ตรวจไม่ได้
+       */
+
+      if(
+        !bestPoints
+      ){
+
+        src.delete();
+
+        return {
+          dataUrl,
+          detected:false
+        };
+
+      }
+
+
+      /*
+       * Perspective transform
+       */
+
+      const w1 =
         distance(
-          best.tl,
-          best.tr
+          bestPoints.tl,
+          bestPoints.tr
         );
 
 
-      const widthBottom =
+      const w2 =
         distance(
-          best.bl,
-          best.br
+          bestPoints.bl,
+          bestPoints.br
         );
 
 
-      const heightLeft =
+      const h1 =
         distance(
-          best.tl,
-          best.bl
+          bestPoints.tl,
+          bestPoints.bl
         );
 
 
-      const heightRight =
+      const h2 =
         distance(
-          best.tr,
-          best.br
+          bestPoints.tr,
+          bestPoints.br
         );
 
 
       const width =
-        Math.round(
-          Math.max(
-            widthTop,
-            widthBottom
+        Math.max(
+          10,
+          Math.round(
+            Math.max(
+              w1,
+              w2
+            )
           )
         );
 
 
       const height =
-        Math.round(
-          Math.max(
-            heightLeft,
-            heightRight
+        Math.max(
+          10,
+          Math.round(
+            Math.max(
+              h1,
+              h2
+            )
           )
         );
 
 
-      const srcTri =
-        cv.matFromArray(
+      const srcPoints =
+        cvInstance.matFromArray(
           4,
           1,
-          cv.CV_32FC2,
+          cvInstance.CV_32FC2,
           [
 
-            best.tl.x,
-            best.tl.y,
+            bestPoints.tl.x,
+            bestPoints.tl.y,
 
-            best.tr.x,
-            best.tr.y,
+            bestPoints.tr.x,
+            bestPoints.tr.y,
 
-            best.br.x,
-            best.br.y,
+            bestPoints.br.x,
+            bestPoints.br.y,
 
-            best.bl.x,
-            best.bl.y
+            bestPoints.bl.x,
+            bestPoints.bl.y
 
           ]
         );
 
 
-      const dstTri =
-        cv.matFromArray(
+      const dstPoints =
+        cvInstance.matFromArray(
           4,
           1,
-          cv.CV_32FC2,
+          cvInstance.CV_32FC2,
           [
 
             0,
             0,
 
-            width - 1,
+            width-1,
             0,
 
-            width - 1,
-            height - 1,
+            width-1,
+            height-1,
 
             0,
-            height - 1
+            height-1
 
           ]
         );
 
 
       const M =
-        cv.getPerspectiveTransform(
-          srcTri,
-          dstTri
+        cvInstance.getPerspectiveTransform(
+          srcPoints,
+          dstPoints
         );
 
 
-      let dst =
-        new cv.Mat();
+      const dst =
+        new cvInstance.Mat();
 
 
-      cv.warpPerspective(
+      cvInstance.warpPerspective(
         src,
         dst,
         M,
-        new cv.Size(
+        new cvInstance.Size(
           width,
           height
         ),
-        cv.INTER_LINEAR,
-        cv.BORDER_CONSTANT,
-        new cv.Scalar(
+        cvInstance.INTER_LINEAR,
+        cvInstance.BORDER_CONSTANT,
+        new cvInstance.Scalar(
           255,
           255,
           255,
@@ -1464,134 +3520,131 @@
       );
 
 
-      const outputCanvas =
+      const output =
         document.createElement(
           'canvas'
         );
 
 
-      outputCanvas.width =
+      output.width =
         width;
 
-      outputCanvas.height =
+      output.height =
         height;
 
 
-      cv.imshow(
-        outputCanvas,
+      cvInstance.imshow(
+        output,
         dst
       );
 
 
       const result =
-        outputCanvas.toDataURL(
+        output.toDataURL(
           'image/jpeg',
           .95
         );
 
 
+      /*
+       * Cleanup
+       */
+
       dst.delete();
       M.delete();
-      srcTri.delete();
-      dstTri.delete();
+      srcPoints.delete();
+      dstPoints.delete();
       src.delete();
 
 
-      return result;
+      return {
+        dataUrl:result,
+        detected:true
+      };
 
 
-    } catch (error) {
+    }catch(error){
 
-      console.warn(
-        'Auto crop failed:',
+      console.error(
+        'Auto Crop:',
         error
       );
 
 
-      return dataUrl;
+      return {
+        dataUrl,
+        detected:false
+      };
 
     }
 
   }
 
 
-  /*
-   * ========================================================
-   * CORNERS
-   * ========================================================
-   */
+  function orderCorners(points){
 
-  function orderCorners(
-    points
-  ) {
-
-    const sorted =
-      [...points];
-
-
-    const sum =
-      p => p.x + p.y;
-
-
-    const diff =
-      p => p.x - p.y;
-
-
-    return {
-
-      tl:
-        sorted.reduce(
-          (a,b) =>
-            sum(a) <
-            sum(b)
-              ? a
-              : b
-        ),
-
-      br:
-        sorted.reduce(
-          (a,b) =>
-            sum(a) >
-            sum(b)
-              ? a
-              : b
-        ),
-
-      tr:
-        sorted.reduce(
-          (a,b) =>
-            diff(a) >
-            diff(b)
-              ? a
-              : b
-        ),
-
-      bl:
-        sorted.reduce(
-          (a,b) =>
-            diff(a) <
-            diff(b)
-              ? a
-              : b
-        )
-
+    const result = {
+      tl:null,
+      tr:null,
+      br:null,
+      bl:null
     };
+
+
+    result.tl =
+      points.reduce(
+        (best,p) =>
+          p.x+p.y <
+          best.x+best.y
+            ? p
+            : best
+      );
+
+
+    result.br =
+      points.reduce(
+        (best,p) =>
+          p.x+p.y >
+          best.x+best.y
+            ? p
+            : best
+      );
+
+
+    result.tr =
+      points.reduce(
+        (best,p) =>
+          p.x-p.y >
+          best.x-best.y
+            ? p
+            : best
+      );
+
+
+    result.bl =
+      points.reduce(
+        (best,p) =>
+          p.x-p.y <
+          best.x-best.y
+            ? p
+            : best
+      );
+
+
+    return result;
 
   }
 
 
-  function distance(
-    a,
-    b
-  ) {
+  function distance(a,b){
 
     return Math.sqrt(
       Math.pow(
-        a.x - b.x,
+        a.x-b.x,
         2
       ) +
       Math.pow(
-        a.y - b.y,
+        a.y-b.y,
         2
       )
     );
@@ -1599,20 +3652,18 @@
   }
 
 
-  /*
-   * ========================================================
-   * IMAGE MODE
-   * ========================================================
-   */
+  /* ========================================================
+     IMAGE PROCESSING
+  ======================================================== */
 
-  async function applyImageMode(
+  async function applyScanMode(
     dataUrl,
     mode
-  ) {
+  ){
 
-    if (
+    if(
       mode === 'color'
-    ) {
+    ){
       return dataUrl;
     }
 
@@ -1649,11 +3700,11 @@
     );
 
 
-    if (
+    if(
       mode === 'gray' ||
       mode === 'bw' ||
       mode === 'document'
-    ) {
+    ){
 
       const imageData =
         ctx.getImageData(
@@ -1668,56 +3719,53 @@
         imageData.data;
 
 
-      for (
-        let i = 0;
-        i < data.length;
-        i += 4
-      ) {
+      for(
+        let i=0;
+        i<data.length;
+        i+=4
+      ){
 
         const r =
           data[i];
 
         const g =
-          data[i + 1];
+          data[i+1];
 
         const b =
-          data[i + 2];
+          data[i+2];
 
 
         let y =
           (
-            0.299 * r +
-            0.587 * g +
-            0.114 * b
+            0.299*r +
+            0.587*g +
+            0.114*b
           );
 
 
-        if (
+        if(
           mode === 'document'
-        ) {
+        ){
 
           /*
-           * เพิ่ม Contrast แบบเบา ๆ
+           * เอกสาร:
+           * เพิ่ม contrast เล็กน้อย
            */
 
           y =
             (
-              (
-                y - 128
-              ) *
-              1.25
-            ) +
-            128;
+              y-128
+            ) * 1.22 + 128;
 
         }
 
 
-        if (
+        if(
           mode === 'bw'
-        ) {
+        ){
 
           y =
-            y > 150
+            y > 155
               ? 255
               : 0;
 
@@ -1737,10 +3785,10 @@
         data[i] =
           y;
 
-        data[i + 1] =
+        data[i+1] =
           y;
 
-        data[i + 2] =
+        data[i+2] =
           y;
 
       }
@@ -1757,92 +3805,45 @@
 
     return canvas.toDataURL(
       'image/jpeg',
-      .93
+      .94
     );
 
   }
 
 
-  /*
-   * ========================================================
-   * IMAGE LOAD
-   * ========================================================
-   */
+  /* ========================================================
+     SCAN RENDER
+  ======================================================== */
 
-  function loadImage(
-    src
-  ) {
-
-    return new Promise(
-      (
-        resolve,
-        reject
-      ) => {
-
-        const img =
-          new Image();
-
-
-        img.onload =
-          () =>
-            resolve(img);
-
-
-        img.onerror =
-          () =>
-            reject(
-              new Error(
-                'โหลดรูปไม่สำเร็จ'
-              )
-            );
-
-
-        img.src =
-          src;
-
-      }
-    );
-
-  }
-
-
-  /*
-   * ========================================================
-   * RENDER
-   * ========================================================
-   */
-
-  function render() {
+  function renderScan(){
 
     el.scanGrid.innerHTML =
       '';
 
 
     el.scanEmpty.style.display =
-      state.pages.length
+      scanState.pages.length
         ? 'none'
         : '';
 
 
-    el.pageCount.textContent =
-      `${state.pages.length} หน้า`;
+    el.scanPageCount.textContent =
+      `${scanState.pages.length} หน้า`;
 
 
-    el.exportPageCount.textContent =
-      state.pages.length;
+    el.scanExportCount.textContent =
+      scanState.pages.length;
 
 
-    el.exportModeLabel.textContent =
-      el.modeSelect.options[
-        el.modeSelect.selectedIndex
-      ].text;
+    if(
+      !scanState.pages.length
+    ){
+      return;
+    }
 
 
-    state.pages.forEach(
-      (
-        page,
-        index
-      ) => {
+    scanState.pages.forEach(
+      (page,index)=>{
 
         const card =
           document.createElement(
@@ -1856,17 +3857,17 @@
 
         card.innerHTML = `
 
-          <div class="thumb">
+          <div class="scan-thumb">
 
             <img
               src="${page.dataUrl}"
-              alt="หน้า ${index + 1}"
+              alt="หน้า ${index+1}"
             >
 
             <span
-              class="badge-page"
+              class="scan-page-badge"
             >
-              หน้า ${index + 1}
+              หน้า ${index+1}
             </span>
 
           </div>
@@ -1881,15 +3882,19 @@
             </div>
 
             <div class="scan-meta">
-              คลิกภาพเพื่อดูตัวอย่าง
+              ${
+                page.detected
+                  ? '✓ ตรวจพบขอบกระดาษ'
+                  : '⚠ ใช้ภาพเดิม / ตรวจขอบไม่พบ'
+              }
             </div>
 
-            <div class="scan-buttons">
+            <div class="scan-actions">
 
               <button
                 type="button"
                 class="btn btn-sm btn-outline-primary"
-                data-action="preview"
+                data-preview
               >
                 ดู
               </button>
@@ -1897,7 +3902,7 @@
               <button
                 type="button"
                 class="btn btn-sm btn-outline-secondary"
-                data-action="up"
+                data-up
               >
                 ↑
               </button>
@@ -1905,7 +3910,7 @@
               <button
                 type="button"
                 class="btn btn-sm btn-outline-secondary"
-                data-action="down"
+                data-down
               >
                 ↓
               </button>
@@ -1913,7 +3918,7 @@
               <button
                 type="button"
                 class="btn btn-sm btn-outline-success"
-                data-action="crop"
+                data-crop
               >
                 Crop
               </button>
@@ -1921,7 +3926,7 @@
               <button
                 type="button"
                 class="btn btn-sm btn-outline-danger"
-                data-action="delete"
+                data-delete
               >
                 ลบ
               </button>
@@ -1933,93 +3938,90 @@
         `;
 
 
-        const img =
-          card.querySelector(
-            'img'
-          );
-
-
-        img.onclick =
+        card.querySelector(
+          '.scan-thumb'
+        ).onclick =
           () =>
-            openPreview(index);
+            openScanPreview(index);
 
 
-        card
-          .querySelector(
-            '[data-action="preview"]'
-          )
-          .onclick =
-            () =>
-              openPreview(index);
+        card.querySelector(
+          '[data-preview]'
+        ).onclick =
+          () =>
+            openScanPreview(index);
 
 
-        card
-          .querySelector(
-            '[data-action="up"]'
-          )
-          .onclick =
-            () =>
-              movePage(
-                index,
-                -1
+        card.querySelector(
+          '[data-up]'
+        ).onclick =
+          () =>
+            moveScanPage(
+              index,
+              -1
+            );
+
+
+        card.querySelector(
+          '[data-down]'
+        ).onclick =
+          () =>
+            moveScanPage(
+              index,
+              1
+            );
+
+
+        card.querySelector(
+          '[data-delete]'
+        ).onclick =
+          () =>
+            deleteScanPage(index);
+
+
+        card.querySelector(
+          '[data-crop]'
+        ).onclick =
+          async () => {
+
+            setScanStatus(
+              'กำลัง Crop หน้านี้...'
+            );
+
+
+            const cropped =
+              await autoCropDocument(
+                scanState
+                  .pages[index]
+                  .dataUrl
               );
 
 
-        card
-          .querySelector(
-            '[data-action="down"]'
-          )
-          .onclick =
-            () =>
-              movePage(
-                index,
-                1
-              );
+            scanState
+              .pages[index]
+              .dataUrl =
+                await applyScanMode(
+                  cropped.dataUrl,
+                  el.scanMode.value
+                );
 
 
-        card
-          .querySelector(
-            '[data-action="delete"]'
-          )
-          .onclick =
-            () =>
-              deletePage(index);
+            scanState
+              .pages[index]
+              .detected =
+                cropped.detected;
 
 
-        card
-          .querySelector(
-            '[data-action="crop"]'
-          )
-          .onclick =
-            async () => {
-
-              setStatus(
-                'กำลัง Auto Crop...'
-              );
+            renderScan();
 
 
-              state.pages[index]
-                .dataUrl =
-                  await autoCropImage(
-                    state.pages[index]
-                      .dataUrl
-                  );
+            setScanStatus(
+              cropped.detected
+                ? 'Crop สำเร็จ'
+                : 'ตรวจขอบไม่พบ จึงใช้ภาพเดิม'
+            );
 
-
-              state.pages[index]
-                .dataUrl =
-                  await applyImageMode(
-                    state.pages[index]
-                      .dataUrl,
-                    el.modeSelect.value
-                  );
-
-
-              render();
-
-              setStatus('');
-
-            };
+          };
 
 
         el.scanGrid.appendChild(
@@ -2032,171 +4034,183 @@
   }
 
 
-  /*
-   * ========================================================
-   * MOVE / DELETE
-   * ========================================================
-   */
-
-  function movePage(
+  function moveScanPage(
     index,
     delta
-  ) {
+  ){
 
     const next =
       index + delta;
 
 
-    if (
+    if(
       next < 0 ||
-      next >= state.pages.length
-    ) {
+      next >=
+        scanState.pages.length
+    ){
       return;
     }
 
 
     [
-      state.pages[index],
-      state.pages[next]
-    ] = [
-      state.pages[next],
-      state.pages[index]
+      scanState.pages[index],
+      scanState.pages[next]
+    ] =
+    [
+      scanState.pages[next],
+      scanState.pages[index]
     ];
 
 
-    render();
+    if(
+      scanState.previewIndex === index
+    ){
+      scanState.previewIndex = next;
+    }else if(
+      scanState.previewIndex === next
+    ){
+      scanState.previewIndex = index;
+    }
+
+
+    renderScan();
 
   }
 
 
-  function deletePage(
-    index
-  ) {
+  function deleteScanPage(index){
 
-    state.pages.splice(
+    scanState.pages.splice(
       index,
       1
     );
 
 
-    if (
-      state.previewIndex === index
-    ) {
+    if(
+      scanState.previewIndex === index
+    ){
 
       closePreview();
 
-    } else if (
-      state.previewIndex >
-      index
-    ) {
+    }else if(
+      scanState.previewIndex > index
+    ){
 
-      state.previewIndex--;
+      scanState.previewIndex--;
 
     }
 
 
-    render();
+    renderScan();
 
   }
 
 
-  /*
-   * ========================================================
-   * AUTO CROP ALL
-   * ========================================================
-   */
+  /* ========================================================
+     AUTO CROP ALL
+  ======================================================== */
 
   el.autoCropAllBtn.onclick =
     async () => {
 
-      if (!state.pages.length) {
+      if(
+        !scanState.pages.length
+      ){
         return;
       }
 
 
-      setStatus(
+      setScanStatus(
         'กำลัง Auto Crop ทุกหน้า...'
       );
 
 
-      for (
-        let i = 0;
-        i < state.pages.length;
+      for(
+        let i=0;
+        i<scanState.pages.length;
         i++
-      ) {
+      ){
 
-        state.pages[i].dataUrl =
-          await autoCropImage(
-            state.pages[i].dataUrl
+        const cropped =
+          await autoCropDocument(
+            scanState
+              .pages[i]
+              .dataUrl
           );
 
 
-        state.pages[i].dataUrl =
-          await applyImageMode(
-            state.pages[i].dataUrl,
-            el.modeSelect.value
-          );
+        scanState
+          .pages[i]
+          .dataUrl =
+            await applyScanMode(
+              cropped.dataUrl,
+              el.scanMode.value
+            );
+
+
+        scanState
+          .pages[i]
+          .detected =
+            cropped.detected;
 
       }
 
 
-      render();
+      renderScan();
 
-      setStatus('');
+
+      setScanStatus(
+        'Auto Crop เสร็จแล้ว'
+      );
 
     };
 
 
-  /*
-   * ========================================================
-   * PREVIEW
-   * ========================================================
-   */
+  /* ========================================================
+     SCAN PREVIEW
+  ======================================================== */
 
-  function openPreview(
-    index
-  ) {
+  function openScanPreview(index){
 
-    state.previewIndex =
+    scanState.previewIndex =
       index;
 
 
-    updatePreview();
+    updateScanPreview();
 
-    el.previewOverlay
+
+    el.previewModal
       .classList
       .add('show');
 
   }
 
 
-  function closePreview() {
-
-    el.previewOverlay
-      .classList
-      .remove('show');
-
-    state.previewIndex =
-      -1;
-
-  }
-
-
-  function updatePreview() {
+  function updateScanPreview(){
 
     const page =
-      state.pages[
-        state.previewIndex
+      scanState.pages[
+        scanState.previewIndex
       ];
 
 
-    if (!page) {
-      return;
-    }
+    if(!page) return;
 
 
-    el.previewImage.src =
-      page.dataUrl;
+    /*
+     * เปลี่ยนเป็น image preview
+     * เพราะ scanner ยังเป็นภาพ
+     */
+
+    el.previewBody.innerHTML = `
+
+      <img
+        class="preview-image"
+        src="${page.dataUrl}"
+        alt="preview"
+      >
+
+    `;
 
 
     el.previewTitle.textContent =
@@ -2205,54 +4219,221 @@
 
     el.previewIndex.textContent =
       `${
-        state.previewIndex + 1
+        scanState.previewIndex+1
       } / ${
-        state.pages.length
+        scanState.pages.length
       }`;
+
+
+    el.previewPrevBtn.onclick =
+      () =>
+        moveScanPreview(-1);
+
+
+    el.previewNextBtn.onclick =
+      () =>
+        moveScanPreview(1);
 
   }
 
 
-  function movePreview(
+  function moveScanPreview(
     delta
-  ) {
+  ){
 
     const next =
-      state.previewIndex +
+      scanState.previewIndex +
       delta;
 
 
-    if (
+    if(
       next < 0 ||
-      next >= state.pages.length
-    ) {
+      next >=
+        scanState.pages.length
+    ){
       return;
     }
 
 
-    state.previewIndex =
+    scanState.previewIndex =
       next;
 
 
-    updatePreview();
+    updateScanPreview();
 
   }
 
 
-  /*
-   * ========================================================
-   * EXPORT PDF
-   * ========================================================
-   */
+  function closePreview(){
 
-  async function exportPdf() {
+    el.previewModal
+      .classList
+      .remove('show');
 
-    if (
-      !state.pages.length
-    ) {
+  }
+
+
+  /* ========================================================
+     CREATE PDF FROM SCANS
+  ======================================================== */
+
+  async function createPdfFromScanPages(){
+
+    const pdf =
+      await PDFDocument.create();
+
+
+    const paper =
+      el.scanPaper.value;
+
+
+    for(
+      const pageData
+      of scanState.pages
+    ){
+
+      const image =
+        await pdf.embedJpg(
+          dataUrlToBytes(
+            pageData.dataUrl
+          )
+        );
+
+
+      const original =
+        image.scale(1);
+
+
+      let pageWidth;
+      let pageHeight;
+
+
+      if(
+        paper === 'a4'
+      ){
+
+        pageWidth =
+          595.28;
+
+        pageHeight =
+          841.89;
+
+      }else if(
+        paper === 'letter'
+      ){
+
+        pageWidth =
+          612;
+
+        pageHeight =
+          792;
+
+      }else{
+
+        pageWidth =
+          original.width;
+
+        pageHeight =
+          original.height;
+
+        const scale =
+          Math.min(
+            1,
+            1200 /
+              Math.max(
+                pageWidth,
+                pageHeight
+              )
+          );
+
+        pageWidth *= scale;
+        pageHeight *= scale;
+
+      }
+
+
+      const page =
+        pdf.addPage([
+          pageWidth,
+          pageHeight
+        ]);
+
+
+      const margin =
+        paper === 'auto'
+          ? 0
+          : 18;
+
+
+      const availableWidth =
+        pageWidth -
+        margin*2;
+
+
+      const availableHeight =
+        pageHeight -
+        margin*2;
+
+
+      const scale =
+        Math.min(
+          availableWidth /
+            original.width,
+
+          availableHeight /
+            original.height
+        );
+
+
+      const drawWidth =
+        original.width *
+        scale;
+
+
+      const drawHeight =
+        original.height *
+        scale;
+
+
+      page.drawImage(
+        image,
+        {
+          x:
+            (
+              pageWidth -
+              drawWidth
+            ) / 2,
+
+          y:
+            (
+              pageHeight -
+              drawHeight
+            ) / 2,
+
+          width:
+            drawWidth,
+
+          height:
+            drawHeight
+        }
+      );
+
+    }
+
+
+    return await pdf.save();
+
+  }
+
+
+  async function exportScanPdf(){
+
+    if(
+      !scanState.pages.length
+    ){
 
       alert(
-        'กรุณาเพิ่มเอกสารอย่างน้อย 1 หน้า'
+        'ยังไม่มีหน้าสแกน'
       );
 
       return;
@@ -2262,249 +4443,51 @@
 
     const filename =
       safeName(
-        el.filenameInput.value
+        el.scanFilename.value
       );
 
 
-    el.exportBtn.disabled =
+    el.scanExportBtn.disabled =
       true;
 
 
-    setStatus(
-      'กำลังสร้าง PDF...'
-    );
+    el.scanRightStatus.textContent =
+      'กำลังสร้าง PDF...';
 
 
-    try {
-
-      const pdf =
-        await PDFDocument.create();
-
-
-      const paper =
-        el.paperSelect.value;
-
-
-      for (
-        const page
-        of state.pages
-      ) {
-
-        const imgBytes =
-          dataUrlToBytes(
-            page.dataUrl
-          );
-
-
-        const image =
-          await pdf.embedJpg(
-            imgBytes
-          );
-
-
-        const dims =
-          image.scale(1);
-
-
-        let pageWidth;
-        let pageHeight;
-
-
-        /*
-         * 72 pt = 1 inch
-         */
-
-        if (
-          paper === 'letter'
-        ) {
-
-          pageWidth =
-            612;
-
-          pageHeight =
-            792;
-
-        } else if (
-          paper === 'a4'
-        ) {
-
-          pageWidth =
-            595.28;
-
-          pageHeight =
-            841.89;
-
-        } else {
-
-          pageWidth =
-            dims.width;
-
-          pageHeight =
-            dims.height;
-
-          const scale =
-            Math.min(
-              540 / pageWidth,
-              720 / pageHeight
-            );
-
-          pageWidth *= scale;
-          pageHeight *= scale;
-
-        }
-
-
-        const outPage =
-          pdf.addPage([
-            pageWidth,
-            pageHeight
-          ]);
-
-
-        const margin =
-          paper === 'auto'
-            ? 0
-            : 18;
-
-
-        const availW =
-          pageWidth -
-          margin * 2;
-
-
-        const availH =
-          pageHeight -
-          margin * 2;
-
-
-        const scale =
-          Math.min(
-            availW /
-              dims.width,
-            availH /
-              dims.height
-          );
-
-
-        const drawW =
-          dims.width *
-          scale;
-
-
-        const drawH =
-          dims.height *
-          scale;
-
-
-        outPage.drawImage(
-          image,
-          {
-
-            x:
-              (
-                pageWidth -
-                drawW
-              ) / 2,
-
-            y:
-              (
-                pageHeight -
-                drawH
-              ) / 2,
-
-            width:
-              drawW,
-
-            height:
-              drawH
-
-          }
-        );
-
-      }
-
+    try{
 
       const bytes =
-        await pdf.save();
+        await createPdfFromScanPages();
 
 
-      const blob =
-        new Blob(
-          [bytes],
-          {
-            type:
-              'application/pdf'
-          }
-        );
-
-
-      const url =
-        URL.createObjectURL(
-          blob
-        );
-
-
-      const link =
-        document.createElement(
-          'a'
-        );
-
-
-      link.href =
-        url;
-
-      link.download =
-        filename + '.pdf';
-
-
-      document.body.appendChild(
-        link
+      downloadBytes(
+        bytes,
+        filename + '.pdf',
+        'application/pdf'
       );
 
 
-      link.click();
-
-
-      link.remove();
-
-
-      setTimeout(
-        () =>
-          URL.revokeObjectURL(
-            url
-          ),
-        30000
-      );
-
-
-      setStatus(
+      el.scanRightStatus.textContent =
         `ส่งออกสำเร็จ • ${
-          state.pages.length
-        } หน้า`
-      );
+          scanState.pages.length
+        } หน้า`;
 
+    }catch(error){
 
-    } catch (error) {
-
-      console.error(
-        error
-      );
-
+      console.error(error);
 
       alert(
-        'สร้าง PDF ไม่สำเร็จ\n\n' +
+        'ส่งออก PDF ไม่สำเร็จ\n\n' +
         (
           error.message ||
           error
         )
       );
 
+    }finally{
 
-      setStatus('');
-
-    } finally {
-
-      el.exportBtn.disabled =
+      el.scanExportBtn.disabled =
         false;
 
     }
@@ -2512,46 +4495,9 @@
   }
 
 
-  function dataUrlToBytes(
-    dataUrl
-  ) {
-
-    const base64 =
-      dataUrl.split(',')[1];
-
-
-    const binary =
-      atob(base64);
-
-
-    const bytes =
-      new Uint8Array(
-        binary.length
-      );
-
-
-    for (
-      let i = 0;
-      i < binary.length;
-      i++
-    ) {
-
-      bytes[i] =
-        binary.charCodeAt(i);
-
-    }
-
-
-    return bytes;
-
-  }
-
-
-  /*
-   * ========================================================
-   * BUTTON EVENTS
-   * ========================================================
-   */
+  /* ========================================================
+     CAMERA / IMPORT EVENTS
+  ======================================================== */
 
   el.startCameraBtn.onclick =
     startCamera;
@@ -2561,106 +4507,56 @@
     stopCamera;
 
 
-  el.captureBtn.onclick =
-    captureCamera;
+  el.shutterBtn.onclick =
+    captureFromCamera;
 
 
-  el.clearAllBtn.onclick =
+  el.scanExportBtn.onclick =
+    exportScanPdf;
+
+
+  el.sendToMergeBtn.onclick =
+    addScannerPdfToMerge;
+
+
+  el.clearScanBtn.onclick =
     () => {
 
-      if (
-        !state.pages.length
-      ) {
+      if(
+        !scanState.pages.length
+      ){
         return;
       }
 
 
-      if (
+      if(
         confirm(
-          'ต้องการล้างเอกสารทั้งหมดหรือไม่?'
+          'ต้องการล้างภาพสแกนทั้งหมดหรือไม่?'
         )
-      ) {
+      ){
 
-        state.pages = [];
+        scanState.pages = [];
 
         closePreview();
 
-        render();
+        renderScan();
 
       }
 
     };
 
-
-  el.modeSelect.onchange =
-    async () => {
-
-      if (
-        !state.pages.length
-      ) {
-        render();
-        return;
-      }
-
-
-      setStatus(
-        'กำลังปรับภาพ...'
-      );
-
-
-      for (
-        let i = 0;
-        i < state.pages.length;
-        i++
-      ) {
-
-        state.pages[i].dataUrl =
-          await applyImageMode(
-            state.pages[i].dataUrl,
-            el.modeSelect.value
-          );
-
-      }
-
-
-      render();
-
-      setStatus('');
-
-    };
-
-
-  el.exportBtn.onclick =
-    exportPdf;
-
-
-  /*
-   * ========================================================
-   * PREVIEW EVENTS
-   * ========================================================
-   */
 
   el.previewCloseBtn.onclick =
     closePreview;
 
 
-  el.previewPrevBtn.onclick =
-    () =>
-      movePreview(-1);
-
-
-  el.previewNextBtn.onclick =
-    () =>
-      movePreview(1);
-
-
-  el.previewOverlay.onclick =
+  el.previewModal.onclick =
     event => {
 
-      if (
+      if(
         event.target ===
-        el.previewOverlay
-      ) {
+        el.previewModal
+      ){
 
         closePreview();
 
@@ -2673,41 +4569,41 @@
     'keydown',
     event => {
 
-      if (
-        !el.previewOverlay
+      if(
+        !el.previewModal
           .classList
           .contains('show')
-      ) {
+      ){
         return;
       }
 
 
-      if (
+      if(
         event.key ===
         'Escape'
-      ) {
+      ){
 
         closePreview();
 
       }
 
 
-      if (
+      if(
         event.key ===
         'ArrowLeft'
-      ) {
+      ){
 
-        movePreview(-1);
+        moveScanPreview(-1);
 
       }
 
 
-      if (
+      if(
         event.key ===
         'ArrowRight'
-      ) {
+      ){
 
-        movePreview(1);
+        moveScanPreview(1);
 
       }
 
@@ -2716,24 +4612,119 @@
 
 
   /*
-   * ========================================================
-   * CLEANUP
-   * ========================================================
+   * =========================================================
+   * MERGE EVENTS
+   * =========================================================
+   */
+
+  el.addPdfBtn.onclick =
+    () =>
+      el.pdfFileInput.click();
+
+
+  el.pdfDropzone.onclick =
+    () =>
+      el.pdfFileInput.click();
+
+
+  el.pdfFileInput.onchange =
+    event =>
+      addPdfFiles(
+        event.target.files
+      );
+
+
+  el.pdfDropzone.addEventListener(
+    'dragover',
+    event => {
+
+      event.preventDefault();
+
+      el.pdfDropzone
+        .classList
+        .add('dragging');
+
+    }
+  );
+
+
+  el.pdfDropzone.addEventListener(
+    'dragleave',
+    () =>
+      el.pdfDropzone
+        .classList
+        .remove('dragging')
+  );
+
+
+  el.pdfDropzone.addEventListener(
+    'drop',
+    event => {
+
+      event.preventDefault();
+
+      el.pdfDropzone
+        .classList
+        .remove('dragging');
+
+      addPdfFiles(
+        event.dataTransfer.files
+      );
+
+    }
+  );
+
+
+  el.selectAllPdfBtn.onclick =
+    selectAllPdfPages;
+
+
+  el.clearAllPdfBtn.onclick =
+    clearAllPdfPages;
+
+
+  el.clearPdfFilesBtn.onclick =
+    () => {
+
+      mergeState.files = [];
+
+      mergeState.queue = [];
+
+      renderMerge();
+
+    };
+
+
+  el.reversePdfBtn.onclick =
+    () => {
+
+      mergeState.queue.reverse();
+
+      renderMergeQueue();
+
+    };
+
+
+  el.pdfExportBtn.onclick =
+    exportMergePdf;
+
+
+  /* ========================================================
+     INITIAL
+  ======================================================== */
+
+  renderMerge();
+
+  renderScan();
+
+  /*
+   * หยุดกล้องเมื่อออกจากหน้า
    */
 
   window.addEventListener(
     'beforeunload',
     stopCamera
   );
-
-
-  /*
-   * ========================================================
-   * START
-   * ========================================================
-   */
-
-  render();
 
 </script>
 

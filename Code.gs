@@ -1,6 +1,6 @@
 function doGet() {
   return HtmlService
     .createHtmlOutputFromFile('index')
-    .setTitle('Scanner Studio - สแกนเอกสาร')
+    .setTitle('PDF Studio - รวม PDF และสแกนเอกสาร')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
