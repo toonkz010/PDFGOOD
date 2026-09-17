@@ -2899,101 +2899,39 @@
 
     let cvInstance;
 
-
     try{
-
-      cvInstance =
-        await waitForOpenCV();
-
-
+      cvInstance = await waitForOpenCV();
     }catch(error){
-
-      console.warn(
-        error.message
-      );
-
-
-      return {
-        dataUrl,
-        detected:false
-      };
-
+      console.warn(error.message);
+      return { dataUrl, detected:false };
     }
 
-
     try{
 
-      const img =
-        await loadImage(dataUrl);
+      const img = await loadImage(dataUrl);
 
+      const maxSide = 1800;
 
-      const maxSide =
-        1800;
-
-
-      const scale =
-        Math.min(
-          1,
-          maxSide /
-            Math.max(
-              img.naturalWidth,
-              img.naturalHeight
-            )
-        );
-
-
-      const canvas =
-        document.createElement('canvas');
-
-
-      canvas.width =
-        Math.round(
-          img.naturalWidth * scale
-        );
-
-
-      canvas.height =
-        Math.round(
-          img.naturalHeight * scale
-        );
-
-
-      const ctx =
-        canvas.getContext(
-          '2d'
-        );
-
-
-      ctx.drawImage(
-        img,
-        0,
-        0,
-        canvas.width,
-        canvas.height
+      const scale = Math.min(
+        1,
+        maxSide / Math.max(img.naturalWidth, img.naturalHeight)
       );
 
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(img.naturalWidth * scale);
+      canvas.height = Math.round(img.naturalHeight * scale);
 
-      const src =
-        cvInstance.imread(
-          canvas
-        );
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
+      const src = cvInstance.imread(canvas);
 
-      const gray =
-        new cvInstance.Mat();
-
-
-      const blur =
-        new cvInstance.Mat();
-
-
-      const edges =
-        new cvInstance.Mat();
-
-
-      const closed =
-        new cvInstance.Mat();
-
+      const gray = new cvInstance.Mat();
+      const enhanced = new cvInstance.Mat();
+      const blur = new cvInstance.Mat();
+      const edges = new cvInstance.Mat();
+      const dilated = new cvInstance.Mat();
+      const closed = new cvInstance.Mat();
 
       cvInstance.cvtColor(
         src,
@@ -3001,49 +2939,76 @@
         cvInstance.COLOR_RGBA2GRAY
       );
 
+      /*
+       * เพิ่ม local contrast ด้วย CLAHE ก่อนหาขอบ
+       * ช่วยกรณีกระดาษกับพื้นหลังสีใกล้เคียงกัน (เช่น
+       * กระดาษขาวบนโต๊ะสีอ่อน) หรือแสงตกกระทบไม่สม่ำเสมอ
+       * ซึ่งเป็นสาเหตุหลักที่ Canny เดิมหาขอบไม่เจอ
+       */
+      let clahe = null;
+
+      try{
+        clahe = new cvInstance.CLAHE(2.5, new cvInstance.Size(8,8));
+        clahe.apply(gray, enhanced);
+      }catch(claheError){
+        gray.copyTo(enhanced);
+      }finally{
+        if(clahe){
+          clahe.delete();
+        }
+      }
 
       cvInstance.GaussianBlur(
-        gray,
+        enhanced,
         blur,
         new cvInstance.Size(5,5),
         0
       );
 
+      /*
+       * เดิมใช้ค่าคงที่ Canny(50,160) ซึ่งเหมาะกับภาพที่
+       * คอนทราสต์สูงเท่านั้น ถ้าแสง/พื้นหลังต่างจากนี้
+       * (เช่นถ่ายในที่แสงน้อย หรือกระดาษเกือบกลืนพื้นหลัง)
+       * จะหาเส้นขอบไม่เจอเลย ตรงนี้เปลี่ยนมาคำนวณค่า
+       * threshold อัตโนมัติจาก Otsu ของภาพจริงแทน
+       */
+      const cannyRef = new cvInstance.Mat();
+
+      const cannyOtsu = cvInstance.threshold(
+        blur,
+        cannyRef,
+        0,
+        255,
+        cvInstance.THRESH_BINARY + cvInstance.THRESH_OTSU
+      );
+
+      cannyRef.delete();
+
+      const cannyLower = Math.max(5, cannyOtsu * 0.5);
+      const cannyUpper = Math.min(255, Math.max(cannyLower + 20, cannyOtsu));
 
       cvInstance.Canny(
         blur,
         edges,
-        50,
-        160
+        cannyLower,
+        cannyUpper
       );
-
 
       /*
-       * ปิดช่องว่างของเส้นขอบ
+       * ปิดช่องว่างของเส้นขอบ - dilate ก่อนแล้วค่อย close
+       * เพื่อเชื่อมเส้นขอบที่ขาดตอนจากคอนทราสต์ต่ำ
+       * (เพิ่ม kernel จาก 7x7 เป็น 9x9 ด้วย)
        */
-
-      const kernel =
-        cvInstance.getStructuringElement(
-          cvInstance.MORPH_RECT,
-          new cvInstance.Size(7,7)
-        );
-
-
-      cvInstance.morphologyEx(
-        edges,
-        closed,
-        cvInstance.MORPH_CLOSE,
-        kernel
+      const kernel = cvInstance.getStructuringElement(
+        cvInstance.MORPH_RECT,
+        new cvInstance.Size(9,9)
       );
 
+      cvInstance.dilate(edges, dilated, kernel);
+      cvInstance.morphologyEx(dilated, closed, cvInstance.MORPH_CLOSE, kernel);
 
-      const contours =
-        new cvInstance.MatVector();
-
-
-      const hierarchy =
-        new cvInstance.Mat();
-
+      const contours = new cvInstance.MatVector();
+      const hierarchy = new cvInstance.Mat();
 
       cvInstance.findContours(
         closed,
@@ -3053,189 +3018,147 @@
         cvInstance.CHAIN_APPROX_SIMPLE
       );
 
+      const imageArea = src.rows * src.cols;
 
-      const imageArea =
-        src.rows *
-        src.cols;
+      let bestPoints = null;
+      let bestScore = 0;
 
-
-      let bestPoints =
-        null;
-
-      let bestScore =
-        0;
-
+      let largestContourClone = null;
+      let largestContourArea = 0;
 
       /*
-       * ค้นหา quadrilateral ที่ใหญ่ที่สุด
+       * เดิม approxPolyDP ใช้ epsilon คงที่ 2% ของเส้นรอบรูป
+       * แต่มุมกระดาษจริงมักไม่คมเป๊ะ (โค้งเล็กน้อย/เงา/รอยยับ)
+       * ทำให้ได้มากกว่าหรือน้อยกว่า 4 จุด และถูกปัดทิ้งไป
+       * ตรงนี้ลองไล่หลายค่า epsilon แทนค่าเดียว
        */
+      function approxQuad(contour, perimeter){
 
-      for(
-        let i=0;
-        i<contours.size();
-        i++
-      ){
+        const epsFactors = [0.02, 0.015, 0.025, 0.01, 0.03, 0.04, 0.05];
 
-        const contour =
-          contours.get(i);
+        for(const factor of epsFactors){
 
+          const approx = new cvInstance.Mat();
 
-        const area =
-          Math.abs(
-            cvInstance.contourArea(
-              contour
-            )
-          );
-
-
-        if(
-          area <
-          imageArea * 0.12
-        ){
-
-          contour.delete();
-
-          continue;
-
-        }
-
-
-        const perimeter =
-          cvInstance.arcLength(
+          cvInstance.approxPolyDP(
             contour,
+            approx,
+            Math.max(2, factor * perimeter),
             true
           );
 
+          if(
+            approx.rows === 4 &&
+            cvInstance.isContourConvex(approx)
+          ){
+            return approx;
+          }
 
-        const approx =
-          new cvInstance.Mat();
+          approx.delete();
 
+        }
 
-        cvInstance.approxPolyDP(
-          contour,
-          approx,
-          Math.max(
-            2,
-            0.02 *
-            perimeter
-          ),
-          true
-        );
+        return null;
 
+      }
 
-        if(
-          approx.rows === 4 &&
-          cvInstance.isContourConvex(
-            approx
-          )
-        ){
+      /*
+       * ค้นหา quadrilateral ที่ใหญ่ที่สุด
+       * พร้อมจำ contour ดิบที่ใหญ่ที่สุดไว้เผื่อ fallback
+       */
+      for(let i=0; i<contours.size(); i++){
+
+        const contour = contours.get(i);
+        const area = Math.abs(cvInstance.contourArea(contour));
+
+        if(area < imageArea * 0.08){
+          contour.delete();
+          continue;
+        }
+
+        if(area > largestContourArea){
+          if(largestContourClone){
+            largestContourClone.delete();
+          }
+          largestContourArea = area;
+          largestContourClone = contour.clone();
+        }
+
+        const perimeter = cvInstance.arcLength(contour, true);
+        const approx = approxQuad(contour, perimeter);
+
+        if(approx){
 
           const points = [];
 
-
-          for(
-            let p=0;
-            p<4;
-            p++
-          ){
-
-            const row =
-              approx.intPtr(
-                p,
-                0
-              );
-
-
-            points.push({
-              x:row[0],
-              y:row[1]
-            });
-
+          for(let p=0; p<4; p++){
+            const row = approx.intPtr(p, 0);
+            points.push({ x:row[0], y:row[1] });
           }
 
+          const ordered = orderCorners(points);
 
-          const ordered =
-            orderCorners(
-              points
-            );
-
-
-          const rectangularity =
-            area /
-            (
-              cvInstance.boundingRect(
-                contour
-              ).width *
-              cvInstance.boundingRect(
-                contour
-              ).height
-            );
-
+          const bounds = cvInstance.boundingRect(contour);
+          const rectangularity = area / (bounds.width * bounds.height);
 
           /*
            * ให้พื้นที่มีน้ำหนักมาก
            * แต่กัน contour แปลก ๆ
            */
+          const score = area * Math.max(0.1, rectangularity);
 
-          const score =
-            area *
-            Math.max(
-              0.1,
-              rectangularity
-            );
-
-
-          if(
-            score >
-            bestScore
-          ){
-
-            bestScore =
-              score;
-
-            bestPoints =
-              ordered;
-
+          if(score > bestScore){
+            bestScore = score;
+            bestPoints = ordered;
           }
+
+          approx.delete();
 
         }
 
-
-        approx.delete();
         contour.delete();
 
       }
 
+      contours.delete();
+      hierarchy.delete();
+      kernel.delete();
+      dilated.delete();
+      closed.delete();
+      edges.delete();
+      blur.delete();
+      enhanced.delete();
 
       /*
-       * ถ้า Canny ไม่เจอ:
-       * ลอง Threshold พื้นกระดาษ
+       * ถ้า Canny (แม้ปรับปรุงแล้ว) ยังไม่เจอ:
+       * ลอง Threshold พื้นกระดาษแบบเดิม แต่ใช้ Otsu
+       * แทนค่าคงที่ 180 เพื่อให้ปรับตามแสงของภาพจริง
        */
+      if(!bestPoints){
 
-      if(
-        !bestPoints
-      ){
+        const thresh = new cvInstance.Mat();
+        const threshRef = new cvInstance.Mat();
 
-        const thresh =
-          new cvInstance.Mat();
+        const paperOtsu = cvInstance.threshold(
+          gray,
+          threshRef,
+          0,
+          255,
+          cvInstance.THRESH_BINARY + cvInstance.THRESH_OTSU
+        );
 
+        threshRef.delete();
 
         cvInstance.threshold(
           gray,
           thresh,
-          180,
+          Math.min(200, Math.max(140, paperOtsu)),
           255,
           cvInstance.THRESH_BINARY
         );
 
-
-        const threshContours =
-          new cvInstance.MatVector();
-
-
-        const threshHierarchy =
-          new cvInstance.Mat();
-
+        const threshContours = new cvInstance.MatVector();
+        const threshHierarchy = new cvInstance.Mat();
 
         cvInstance.findContours(
           thresh,
@@ -3245,96 +3168,37 @@
           cvInstance.CHAIN_APPROX_SIMPLE
         );
 
+        for(let i=0; i<threshContours.size(); i++){
 
-        for(
-          let i=0;
-          i<threshContours.size();
-          i++
-        ){
+          const contour = threshContours.get(i);
+          const area = Math.abs(cvInstance.contourArea(contour));
 
-          const contour =
-            threshContours.get(i);
-
-
-          const area =
-            Math.abs(
-              cvInstance.contourArea(
-                contour
-              )
-            );
-
-
-          if(
-            area <
-              imageArea * 0.25
-          ){
-
+          if(area < imageArea * 0.2){
             contour.delete();
-
             continue;
-
           }
 
+          if(area > largestContourArea){
+            if(largestContourClone){
+              largestContourClone.delete();
+            }
+            largestContourArea = area;
+            largestContourClone = contour.clone();
+          }
 
-          const perimeter =
-            cvInstance.arcLength(
-              contour,
-              true
-            );
+          const perimeter = cvInstance.arcLength(contour, true);
+          const approx = approxQuad(contour, perimeter);
 
-
-          const approx =
-            new cvInstance.Mat();
-
-
-          cvInstance.approxPolyDP(
-            contour,
-            approx,
-            Math.max(
-              2,
-              0.025 *
-              perimeter
-            ),
-            true
-          );
-
-
-          if(
-            approx.rows === 4 &&
-            cvInstance.isContourConvex(
-              approx
-            )
-          ){
+          if(approx){
 
             const points = [];
 
-
-            for(
-              let p=0;
-              p<4;
-              p++
-            ){
-
-              const row =
-                approx.intPtr(
-                  p,
-                  0
-                );
-
-
-              points.push({
-                x:row[0],
-                y:row[1]
-              });
-
+            for(let p=0; p<4; p++){
+              const row = approx.intPtr(p, 0);
+              points.push({ x:row[0], y:row[1] });
             }
 
-
-            bestPoints =
-              orderCorners(
-                points
-              );
-
+            bestPoints = orderCorners(points);
 
             approx.delete();
             contour.delete();
@@ -3343,12 +3207,9 @@
 
           }
 
-
-          approx.delete();
           contour.delete();
 
         }
-
 
         thresh.delete();
         threshContours.delete();
@@ -3356,27 +3217,33 @@
 
       }
 
-
-      /*
-       * Clean up
-       */
-
-      contours.delete();
-      hierarchy.delete();
-      kernel.delete();
-      closed.delete();
-      edges.delete();
-      blur.delete();
       gray.delete();
 
+      /*
+       * ถ้ายังไม่เจอ quadrilateral ที่ชัดเจนอีก:
+       * ใช้ minAreaRect ของ contour ดิบที่ใหญ่ที่สุดที่เจอ
+       * (จากทั้งสองรอบด้านบน) เป็นกรอบโดยประมาณแทน
+       * ดีกว่าปล่อยภาพเต็มเฟรม (ติดพื้นหลัง) ออกไปเฉย ๆ
+       */
+      if(
+        !bestPoints &&
+        largestContourClone &&
+        largestContourArea > imageArea * 0.15
+      ){
+
+        const rotatedRect = cvInstance.minAreaRect(largestContourClone);
+        bestPoints = orderCorners(rotatedRectPoints(rotatedRect));
+
+      }
+
+      if(largestContourClone){
+        largestContourClone.delete();
+      }
 
       /*
-       * ตรวจไม่ได้
+       * ตรวจไม่ได้จริง ๆ
        */
-
-      if(
-        !bestPoints
-      ){
+      if(!bestPoints){
 
         src.delete();
 
@@ -3387,189 +3254,78 @@
 
       }
 
-
       /*
        * Perspective transform
        */
 
-      const w1 =
-        distance(
-          bestPoints.tl,
-          bestPoints.tr
-        );
+      const w1 = distance(bestPoints.tl, bestPoints.tr);
+      const w2 = distance(bestPoints.bl, bestPoints.br);
+      const h1 = distance(bestPoints.tl, bestPoints.bl);
+      const h2 = distance(bestPoints.tr, bestPoints.br);
 
+      const width = Math.max(10, Math.round(Math.max(w1, w2)));
+      const height = Math.max(10, Math.round(Math.max(h1, h2)));
 
-      const w2 =
-        distance(
-          bestPoints.bl,
-          bestPoints.br
-        );
+      const srcPoints = cvInstance.matFromArray(
+        4, 1, cvInstance.CV_32FC2,
+        [
+          bestPoints.tl.x, bestPoints.tl.y,
+          bestPoints.tr.x, bestPoints.tr.y,
+          bestPoints.br.x, bestPoints.br.y,
+          bestPoints.bl.x, bestPoints.bl.y
+        ]
+      );
 
+      const dstPoints = cvInstance.matFromArray(
+        4, 1, cvInstance.CV_32FC2,
+        [
+          0, 0,
+          width-1, 0,
+          width-1, height-1,
+          0, height-1
+        ]
+      );
 
-      const h1 =
-        distance(
-          bestPoints.tl,
-          bestPoints.bl
-        );
+      const M = cvInstance.getPerspectiveTransform(srcPoints, dstPoints);
 
-
-      const h2 =
-        distance(
-          bestPoints.tr,
-          bestPoints.br
-        );
-
-
-      const width =
-        Math.max(
-          10,
-          Math.round(
-            Math.max(
-              w1,
-              w2
-            )
-          )
-        );
-
-
-      const height =
-        Math.max(
-          10,
-          Math.round(
-            Math.max(
-              h1,
-              h2
-            )
-          )
-        );
-
-
-      const srcPoints =
-        cvInstance.matFromArray(
-          4,
-          1,
-          cvInstance.CV_32FC2,
-          [
-
-            bestPoints.tl.x,
-            bestPoints.tl.y,
-
-            bestPoints.tr.x,
-            bestPoints.tr.y,
-
-            bestPoints.br.x,
-            bestPoints.br.y,
-
-            bestPoints.bl.x,
-            bestPoints.bl.y
-
-          ]
-        );
-
-
-      const dstPoints =
-        cvInstance.matFromArray(
-          4,
-          1,
-          cvInstance.CV_32FC2,
-          [
-
-            0,
-            0,
-
-            width-1,
-            0,
-
-            width-1,
-            height-1,
-
-            0,
-            height-1
-
-          ]
-        );
-
-
-      const M =
-        cvInstance.getPerspectiveTransform(
-          srcPoints,
-          dstPoints
-        );
-
-
-      const dst =
-        new cvInstance.Mat();
-
+      const dst = new cvInstance.Mat();
 
       cvInstance.warpPerspective(
         src,
         dst,
         M,
-        new cvInstance.Size(
-          width,
-          height
-        ),
+        new cvInstance.Size(width, height),
         cvInstance.INTER_LINEAR,
         cvInstance.BORDER_CONSTANT,
-        new cvInstance.Scalar(
-          255,
-          255,
-          255,
-          255
-        )
+        new cvInstance.Scalar(255, 255, 255, 255)
       );
 
+      const output = document.createElement('canvas');
 
-      const output =
-        document.createElement(
-          'canvas'
-        );
+      output.width = width;
+      output.height = height;
 
+      cvInstance.imshow(output, dst);
 
-      output.width =
-        width;
-
-      output.height =
-        height;
-
-
-      cvInstance.imshow(
-        output,
-        dst
-      );
-
-
-      const result =
-        output.toDataURL(
-          'image/jpeg',
-          .95
-        );
-
+      const result = output.toDataURL('image/jpeg', .95);
 
       /*
        * Cleanup
        */
-
       dst.delete();
       M.delete();
       srcPoints.delete();
       dstPoints.delete();
       src.delete();
 
-
       return {
         dataUrl:result,
         detected:true
       };
 
-
     }catch(error){
 
-      console.error(
-        'Auto Crop:',
-        error
-      );
-
+      console.error('Auto Crop:', error);
 
       return {
         dataUrl,
@@ -3648,6 +3404,37 @@
         2
       )
     );
+
+  }
+
+
+  /*
+   * แปลงผลลัพธ์ของ cv.minAreaRect (center/size/angle)
+   * ให้เป็นพิกัดมุมทั้ง 4 จุด เพื่อใช้แทน bestPoints
+   * ในกรณีที่หา quadrilateral จริงไม่เจอเลย
+   */
+  function rotatedRectPoints(rect){
+
+    const { center, size, angle } = rect;
+
+    const theta = angle * Math.PI / 180;
+    const cosT = Math.cos(theta);
+    const sinT = Math.sin(theta);
+
+    const hw = size.width / 2;
+    const hh = size.height / 2;
+
+    const corners = [
+      { x:-hw, y:-hh },
+      { x: hw, y:-hh },
+      { x: hw, y: hh },
+      { x:-hw, y: hh }
+    ];
+
+    return corners.map(p => ({
+      x: center.x + (p.x*cosT - p.y*sinT),
+      y: center.y + (p.x*sinT + p.y*cosT)
+    }));
 
   }
 
