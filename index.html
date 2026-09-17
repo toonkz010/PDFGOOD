@@ -10,7 +10,6 @@
   <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs" type="module"></script>
 
   <style>
     :root{
@@ -144,6 +143,12 @@
       padding:8px 10px;background:#111827;border-top:1px solid rgba(255,255,255,.08)
     }
     .preview-zoom .btn{min-width:38px}
+    .preview-zoom-slider{
+      width:min(260px,32vw);
+      accent-color:#6b7cff;
+      cursor:pointer;
+    }
+
     .preview-zoom-value{
       min-width:66px;text-align:center;color:#fff;font-size:12px;
       border:1px solid rgba(255,255,255,.18);border-radius:9px;padding:5px 8px
@@ -249,7 +254,7 @@
         </div>
       </div>
       <div class="preview-body">
-        <canvas id="previewCanvas"></canvas>
+        
       </div>
       <div class="preview-footer">
         <button id="previewPrevBtn" class="btn btn-sm btn-outline-light preview-nav">‹</button>
@@ -260,6 +265,16 @@
         <button id="zoomOutBtn" class="btn btn-sm btn-outline-light">−</button>
         <button id="zoomResetBtn" class="btn btn-sm btn-outline-light">100%</button>
         <button id="zoomInBtn" class="btn btn-sm btn-outline-light">＋</button>
+        <input
+          id="zoomSlider"
+          class="preview-zoom-slider"
+          type="range"
+          min="25"
+          max="400"
+          step="5"
+          value="100"
+          aria-label="ระดับการซูม"
+        >
         <div id="zoomValue" class="preview-zoom-value">100%</div>
       </div>
     </div>
@@ -268,20 +283,32 @@
 <script>
   const { PDFDocument } = PDFLib;
 
+  /* =========================================================
+     STATE
+  ========================================================= */
   const state = {
-    files: [], // { id, file, name, size, bytes, pdfDoc, pageCount, selected:Set }
-    queue: []  // { fileId, pageIndex }
+    files: [],
+    queue: []
   };
-
 
   const preview = {
     open: false,
-    queueIndex: 0,
-    pdfjs: null,
-    task: null,
-    zoom: 1
+    queueIndex: -1,
+    temp: null,
+    zoom: 1,
+    renderToken: 0,
+    renderTask: null,
+    loadingTask: null,
+    pdf: null,
+    pdfFileId: null
   };
 
+  let pdfjsPromise = null;
+  let resizeTimer = null;
+
+  /* =========================================================
+     DOM
+  ========================================================= */
   const el = {
     fileInput: document.getElementById('fileInput'),
     dropzone: document.getElementById('dropzone'),
@@ -297,31 +324,67 @@
     reverseBtn: document.getElementById('reverseBtn'),
     filenameInput: document.getElementById('filenameInput'),
     exportBtn: document.getElementById('exportBtn'),
-    exportStatus: document.getElementById('exportStatus')
+    exportStatus: document.getElementById('exportStatus'),
+    previewModal: document.getElementById('previewModal'),
+    previewBody: document.getElementById('previewBody'),
+    previewCloseBtn: document.getElementById('previewCloseBtn'),
+    previewPrevBtn: document.getElementById('previewPrevBtn'),
+    previewNextBtn: document.getElementById('previewNextBtn'),
+    previewIndicator: document.getElementById('previewIndicator'),
+    previewTitleMain: document.getElementById('previewTitleMain'),
+    previewTitleSub: document.getElementById('previewTitleSub'),
+    zoomInBtn: document.getElementById('zoomInBtn'),
+    zoomOutBtn: document.getElementById('zoomOutBtn'),
+    zoomResetBtn: document.getElementById('zoomResetBtn'),
+    zoomSlider: document.getElementById('zoomSlider'),
+    zoomValue: document.getElementById('zoomValue')
   };
 
+  /* =========================================================
+     HELPERS
+  ========================================================= */
   function uid() {
     return 'f_' + Date.now() + '_' + Math.random().toString(36).slice(2, 9);
   }
 
   function formatBytes(bytes) {
     if (!bytes) return '0 B';
-    const units = ['B','KB','MB','GB'];
+    const units = ['B', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(1024));
     return (bytes / Math.pow(1024, i)).toFixed(i ? 1 : 0) + ' ' + units[i];
   }
 
   function safeName(name) {
-    return (name || '')
+    return String(name || '')
       .replace(/[\\/:*?"<>|]/g, '-')
       .replace(/\s+/g, ' ')
       .trim()
       .slice(0, 150);
   }
 
+  function escapeHtml(text) {
+    return String(text)
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#039;');
+  }
+
+  function isCancelError(error) {
+    const msg = String(error?.message || error || '');
+    return error?.name === 'RenderingCancelledException' ||
+           msg.includes('RenderingCancelledException') ||
+           msg.includes('RenderingCancelled');
+  }
+
+  /* =========================================================
+     ADD PDF
+  ========================================================= */
   async function addFiles(fileList) {
-    const files = Array.from(fileList || [])
-      .filter(f => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'));
+    const files = Array.from(fileList || []).filter(file =>
+      file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')
+    );
 
     if (!files.length) return;
 
@@ -332,7 +395,7 @@
         const bytes = await file.arrayBuffer();
         const pdfDoc = await PDFDocument.load(bytes, { ignoreEncryption: false });
 
-        const item = {
+        state.files.push({
           id: uid(),
           file,
           name: file.name,
@@ -341,12 +404,10 @@
           pdfDoc,
           pageCount: pdfDoc.getPageCount(),
           selected: new Set()
-        };
-
-        state.files.push(item);
-
-      } catch (err) {
-        alert(`เปิดไฟล์ไม่สำเร็จ: ${file.name}\n\n${err.message || err}`);
+        });
+      } catch (error) {
+        console.error(error);
+        alert('เปิดไฟล์ไม่สำเร็จ\n\n' + file.name + '\n\n' + (error.message || error));
       }
     }
 
@@ -356,16 +417,20 @@
   }
 
   function removeFile(fileId) {
-    const idx = state.files.findIndex(f => f.id === fileId);
-    if (idx < 0) return;
+    const index = state.files.findIndex(f => f.id === fileId);
+    if (index < 0) return;
 
-    state.files.splice(idx, 1);
+    if (preview.pdfFileId === fileId) {
+      closePreview();
+    }
+
+    state.files.splice(index, 1);
     state.queue = state.queue.filter(q => q.fileId !== fileId);
     render();
   }
 
   function isSelected(fileId, pageIndex) {
-    return state.files.find(f => f.id === fileId)?.selected.has(pageIndex);
+    return Boolean(state.files.find(f => f.id === fileId)?.selected.has(pageIndex));
   }
 
   function togglePage(fileId, pageIndex) {
@@ -379,14 +444,17 @@
       file.selected.add(pageIndex);
       state.queue.push({ fileId, pageIndex });
     }
+
     render();
   }
 
+  /* =========================================================
+     UI RENDER
+  ========================================================= */
   function render() {
     el.emptyState.style.display = state.files.length ? 'none' : '';
     el.fileCount.textContent = state.files.length;
     el.selectedCount.textContent = state.queue.length;
-
     el.filesArea.innerHTML = '';
 
     state.files.forEach(file => {
@@ -407,7 +475,7 @@
       `;
 
       const actions = document.createElement('div');
-      actions.innerHTML = `<button class="btn btn-sm btn-outline-danger mini-btn">ลบ</button>`;
+      actions.innerHTML = `<button type="button" class="btn btn-sm btn-outline-danger mini-btn">ลบ</button>`;
       actions.querySelector('button').onclick = () => removeFile(file.id);
 
       head.appendChild(info);
@@ -417,24 +485,23 @@
       pageGrid.className = 'page-grid';
 
       for (let i = 0; i < file.pageCount; i++) {
+        const selected = isSelected(file.id, i);
         const item = document.createElement('div');
-        item.className = 'page-item previewable' + (isSelected(file.id, i) ? ' selected' : '');
+        item.className = 'page-item' + (selected ? ' selected' : '');
         item.innerHTML = `
-          <input class="page-check" type="checkbox" ${isSelected(file.id, i) ? 'checked' : ''}>
+          <input class="page-check" type="checkbox" ${selected ? 'checked' : ''}>
           <div class="page-number">${i + 1}</div>
-          <div class="page-caption">หน้า ${i + 1} • คลิกเพื่อดู</div>
+          <div class="page-caption">${selected ? 'เลือกแล้ว • คลิกดู' : 'คลิกเพื่อดู'}</div>
         `;
-        item.onclick = (e) => {
-          if (e.target.matches('input')) {
+
+        item.onclick = event => {
+          if (event.target.matches('.page-check')) {
             togglePage(file.id, i);
           } else {
             openPreviewForPage(file.id, i);
           }
         };
-        item.ondblclick = (e) => {
-          e.preventDefault();
-          openPreviewForPage(file.id, i);
-        };
+
         pageGrid.appendChild(item);
       }
 
@@ -460,17 +527,16 @@
 
       const row = document.createElement('div');
       row.className = 'queue-item';
-
       row.innerHTML = `
         <div class="queue-no">${index + 1}</div>
-        <div class="queue-text">
+        <div class="queue-text" title="คลิกเพื่อดูตัวอย่าง">
           <div class="queue-main">${escapeHtml(file.name)}</div>
           <div class="queue-sub">หน้า ${q.pageIndex + 1}</div>
         </div>
         <div class="queue-actions d-flex gap-1">
-          <button class="btn btn-sm btn-outline-secondary">↑</button>
-          <button class="btn btn-sm btn-outline-secondary">↓</button>
-          <button class="btn btn-sm btn-outline-danger">×</button>
+          <button type="button" class="btn btn-sm btn-outline-secondary" title="เลื่อนขึ้น">↑</button>
+          <button type="button" class="btn btn-sm btn-outline-secondary" title="เลื่อนลง">↓</button>
+          <button type="button" class="btn btn-sm btn-outline-danger" title="ลบ">×</button>
         </div>
       `;
 
@@ -478,6 +544,11 @@
       buttons[0].onclick = () => moveQueue(index, -1);
       buttons[1].onclick = () => moveQueue(index, 1);
       buttons[2].onclick = () => removeFromQueue(index);
+      row.querySelector('.queue-text').onclick = () => {
+        preview.queueIndex = index;
+        preview.temp = null;
+        showPreview(false);
+      };
 
       el.queue.appendChild(row);
     });
@@ -487,17 +558,37 @@
     const newIndex = index + delta;
     if (newIndex < 0 || newIndex >= state.queue.length) return;
 
-    [state.queue[index], state.queue[newIndex]] =
-      [state.queue[newIndex], state.queue[index]];
+    [state.queue[index], state.queue[newIndex]] = [state.queue[newIndex], state.queue[index]];
+
+    if (preview.open) {
+      if (preview.queueIndex === index) preview.queueIndex = newIndex;
+      else if (preview.queueIndex === newIndex) preview.queueIndex = index;
+    }
 
     renderQueue();
+    if (preview.open) schedulePreviewRender();
   }
 
   function removeFromQueue(index) {
     const q = state.queue[index];
+    if (!q) return;
+
     const file = state.files.find(f => f.id === q.fileId);
     if (file) file.selected.delete(q.pageIndex);
+
     state.queue.splice(index, 1);
+
+    if (preview.open && preview.queueIndex >= 0) {
+      if (!state.queue.length) {
+        closePreview();
+      } else if (preview.queueIndex === index) {
+        preview.queueIndex = Math.min(index, state.queue.length - 1);
+        schedulePreviewRender();
+      } else if (preview.queueIndex > index) {
+        preview.queueIndex--;
+      }
+    }
+
     render();
   }
 
@@ -516,21 +607,75 @@
   function clearAll() {
     state.files.forEach(file => file.selected.clear());
     state.queue = [];
+    closePreview();
     render();
   }
 
-
-  // ---------- Preview ----------
-  let pdfjsModulePromise = null;
-
+  /* =========================================================
+     PDF.JS
+  ========================================================= */
   async function getPdfJs() {
-    if (!pdfjsModulePromise) {
-      pdfjsModulePromise = import('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs');
+    if (!pdfjsPromise) {
+      pdfjsPromise = import('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs');
     }
-    const mod = await pdfjsModulePromise;
-    mod.GlobalWorkerOptions.workerSrc =
+
+    const pdfjs = await pdfjsPromise;
+    pdfjs.GlobalWorkerOptions.workerSrc =
       'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.mjs';
-    return mod;
+    return pdfjs;
+  }
+
+  /* =========================================================
+     PREVIEW LIFECYCLE
+  ========================================================= */
+  function cancelPreviewRender() {
+    preview.renderToken++;
+
+    if (preview.renderTask) {
+      try { preview.renderTask.cancel(); } catch (_) {}
+      preview.renderTask = null;
+    }
+
+    if (preview.loadingTask) {
+      try { preview.loadingTask.destroy(); } catch (_) {}
+      preview.loadingTask = null;
+    }
+  }
+
+  async function closePreviewPdf() {
+    const pdf = preview.pdf;
+    preview.pdf = null;
+    preview.pdfFileId = null;
+
+    if (pdf) {
+      try { await pdf.destroy(); } catch (_) {}
+    }
+  }
+
+  async function openPdfForPreview(file) {
+    if (preview.pdf && preview.pdfFileId === file.id) {
+      return preview.pdf;
+    }
+
+    await closePreviewPdf();
+
+    const pdfjs = await getPdfJs();
+    if (!preview.open) return null;
+
+    const loadingTask = pdfjs.getDocument({ data: file.bytes.slice(0) });
+    preview.loadingTask = loadingTask;
+
+    const pdf = await loadingTask.promise;
+
+    if (!preview.open) {
+      try { await pdf.destroy(); } catch (_) {}
+      return null;
+    }
+
+    preview.loadingTask = null;
+    preview.pdf = pdf;
+    preview.pdfFileId = file.id;
+    return pdf;
   }
 
   function openPreviewForPage(fileId, pageIndex) {
@@ -538,29 +683,42 @@
       q.fileId === fileId && q.pageIndex === pageIndex
     );
 
-    // ถ้าหน้านี้ยังไม่ได้เลือก ให้ดูตัวอย่างได้ก่อนโดยสร้างคิวชั่วคราวตำแหน่งแรก
     if (queueIndex >= 0) {
       preview.queueIndex = queueIndex;
+      preview.temp = null;
     } else {
-      // แสดงหน้านี้ทันที โดยไม่เพิ่มเข้า queue
       preview.queueIndex = -1;
       preview.temp = { fileId, pageIndex };
     }
-    showPreview();
+
+    showPreview(false);
   }
 
-  function showPreview() {
-    preview.zoom = 1;
+  function showPreview(resetZoom = true) {
+    cancelPreviewRender();
+
+    if (resetZoom) preview.zoom = 1;
+
     preview.open = true;
-    document.getElementById('previewModal').classList.add('show');
-    document.getElementById('previewModal').setAttribute('aria-hidden', 'false');
-    renderPreviewPage();
+    el.previewModal.classList.add('show');
+    el.previewModal.setAttribute('aria-hidden', 'false');
+    syncZoomUI();
+
+    schedulePreviewRender();
   }
 
   function closePreview() {
     preview.open = false;
-    document.getElementById('previewModal').classList.remove('show');
-    document.getElementById('previewModal').setAttribute('aria-hidden', 'true');
+    cancelPreviewRender();
+    preview.queueIndex = -1;
+    preview.temp = null;
+
+    if (el.previewModal.classList.contains('show')) {
+      el.previewModal.classList.remove('show');
+    }
+    el.previewModal.setAttribute('aria-hidden', 'true');
+
+    // ปล่อย PDF cache ไว้ระหว่างการใช้งาน เพื่อให้ซูม/เปลี่ยนหน้าเร็วขึ้น
   }
 
   function getPreviewTarget() {
@@ -570,101 +728,196 @@
     return preview.temp || null;
   }
 
-  async function renderPreviewPage() {
+  function schedulePreviewRender() {
+    cancelPreviewRender();
+    const token = preview.renderToken;
+
+    // ให้ browser รวมการกดเปลี่ยนหน้า/ซูมที่ติดกันก่อน render
+    requestAnimationFrame(() => {
+      if (!preview.open || token !== preview.renderToken) return;
+      renderPreviewPage(token);
+    });
+  }
+
+  /* =========================================================
+     PREVIEW RENDER
+     - Cancel old render first
+     - Never reuse canvas
+     - New canvas for every render
+     - PDF.js loading cancelled when page changes
+     - Cancellation errors are silent
+  ========================================================= */
+  async function renderPreviewPage(tokenFromSchedule) {
+    if (!preview.open) return;
+
     const target = getPreviewTarget();
     if (!target) return;
 
     const file = state.files.find(f => f.id === target.fileId);
     if (!file) return;
 
-    const canvas = document.getElementById('previewCanvas');
-    const ctx = canvas.getContext('2d');
+    const renderToken = preview.renderToken;
 
-    document.getElementById('previewTitleMain').textContent = file.name;
-    document.getElementById('previewTitleSub').textContent =
+    el.previewTitleMain.textContent = file.name;
+    el.previewTitleSub.textContent =
       `หน้า ${target.pageIndex + 1} • ${formatBytes(file.size)}`;
 
     try {
-      const pdfjs = await getPdfJs();
-      const loadingTask = pdfjs.getDocument({ data: file.bytes.slice(0) });
-      preview.task = loadingTask;
-      const pdf = await loadingTask.promise;
+      const pdf = await openPdfForPreview(file);
+
+      if (!pdf || !preview.open || renderToken !== preview.renderToken) return;
+
       const page = await pdf.getPage(target.pageIndex + 1);
+      if (!preview.open || renderToken !== preview.renderToken) return;
 
-      const container = document.querySelector('.preview-body');
+      const container = el.previewBody;
       const baseViewport = page.getViewport({ scale: 1 });
-      const maxWidth = Math.max(320, container.clientWidth - 30);
-      const maxHeight = Math.max(320, container.clientHeight - 30);
 
-      // Fit-to-window scale, then apply user zoom.
+      const maxWidth = Math.max(320, container.clientWidth - 40);
+      const maxHeight = Math.max(320, container.clientHeight - 40);
+
       const fitScale = Math.min(
         maxWidth / baseViewport.width,
         maxHeight / baseViewport.height
       );
 
-      const finalScale = Math.max(0.25, Math.min(4, fitScale * preview.zoom));
+      // 25%-400% ของขนาด fit-to-window
+      const finalScale = Math.max(
+        0.25,
+        Math.min(4, fitScale * preview.zoom)
+      );
+
       const viewport = page.getViewport({ scale: finalScale });
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
 
-      const dpr = window.devicePixelRatio || 1;
-      canvas.width = Math.floor(viewport.width * dpr);
-      canvas.height = Math.floor(viewport.height * dpr);
-      canvas.style.width = Math.floor(viewport.width) + 'px';
-      canvas.style.height = Math.floor(viewport.height) + 'px';
+      // สำคัญ: สร้าง canvas ใหม่ทุกครั้ง
+      const newCanvas = document.createElement('canvas');
+      newCanvas.id = 'previewCanvas';
+      newCanvas.style.display = 'block';
+      newCanvas.style.background = '#fff';
+      newCanvas.style.boxShadow = '0 8px 28px rgba(0,0,0,.35)';
+      newCanvas.style.maxWidth = 'none';
+      newCanvas.style.maxHeight = 'none';
+      newCanvas.width = Math.max(1, Math.floor(viewport.width * dpr));
+      newCanvas.height = Math.max(1, Math.floor(viewport.height * dpr));
+      newCanvas.style.width = Math.floor(viewport.width) + 'px';
+      newCanvas.style.height = Math.floor(viewport.height) + 'px';
 
-      // When zoomed, allow scrolling rather than shrinking back down.
-      canvas.style.maxWidth = 'none';
-      canvas.style.maxHeight = 'none';
+      // ลบ canvas เดิมก่อนเริ่ม render ใหม่
+      container.replaceChildren(newCanvas);
 
-      await page.render({
+      const ctx = newCanvas.getContext('2d', { alpha: false });
+
+      const renderTask = page.render({
         canvasContext: ctx,
         viewport,
         transform: dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : null
-      }).promise;
+      });
 
-      const realCount = state.queue.length;
-      document.getElementById('previewIndicator').textContent =
+      preview.renderTask = renderTask;
+
+      try {
+        await renderTask.promise;
+      } catch (error) {
+        // ผู้ใช้เปลี่ยนหน้า/ซูมระหว่าง render = ยกเลิกแบบเงียบ ๆ
+        if (isCancelError(error)) return;
+        throw error;
+      } finally {
+        if (preview.renderTask === renderTask) {
+          preview.renderTask = null;
+        }
+      }
+
+      if (!preview.open || renderToken !== preview.renderToken) return;
+
+      el.previewIndicator.textContent =
         preview.queueIndex >= 0
-          ? `${preview.queueIndex + 1} / ${realCount}`
+          ? `${preview.queueIndex + 1} / ${state.queue.length}`
           : `ตัวอย่างหน้า ${target.pageIndex + 1}`;
 
-      const percent = Math.round(preview.zoom * 100);
-      document.getElementById('zoomValue').textContent = `${percent}%`;
+      syncZoomUI();
 
-    } catch (err) {
-      console.error(err);
-      alert('เปิดตัวอย่างหน้า PDF ไม่สำเร็จ\n\n' + (err.message || err));
+    } catch (error) {
+      // ห้ามเตือนผู้ใช้สำหรับ cancellation ใด ๆ
+      if (isCancelError(error)) return;
+
+      console.error('Preview error:', error);
+
+      if (preview.open && renderToken === preview.renderToken) {
+        alert(
+          'เปิดตัวอย่างหน้า PDF ไม่สำเร็จ\n\n' +
+          (error.message || String(error))
+        );
+      }
+    }
+  }
+
+  /* =========================================================
+     ZOOM
+  ========================================================= */
+  function clampZoom(value) {
+    return Math.max(0.25, Math.min(4, value));
+  }
+
+  function setZoomFromPercent(percent, rerender = true) {
+    const p = Math.max(25, Math.min(400, Number(percent) || 100));
+    preview.zoom = p / 100;
+    syncZoomUI();
+
+    if (rerender && preview.open) {
+      schedulePreviewRender();
+    }
+  }
+
+  function syncZoomUI() {
+    const percent = Math.round(preview.zoom * 100);
+
+    if (el.zoomSlider) {
+      el.zoomSlider.value = percent;
+    }
+
+    if (el.zoomValue) {
+      el.zoomValue.textContent = percent + '%';
     }
   }
 
   function changeZoom(delta) {
-    preview.zoom = Math.max(0.25, Math.min(4, Math.round((preview.zoom + delta) * 100) / 100));
-    renderPreviewPage();
+    const percent = Math.round(preview.zoom * 100);
+    setZoomFromPercent(percent + delta, true);
   }
 
   function resetZoom() {
-    preview.zoom = 1;
-    renderPreviewPage();
+    setZoomFromPercent(100, true);
   }
 
-
+  /* =========================================================
+     PREVIEW NAVIGATION
+  ========================================================= */
   function previewMove(delta) {
     if (!state.queue.length) return;
+
     if (preview.queueIndex < 0) {
       const temp = preview.temp;
+      if (!temp) return;
+
       const idx = state.queue.findIndex(q =>
         q.fileId === temp.fileId && q.pageIndex === temp.pageIndex
       );
-      if (idx < 0) return;
-      preview.queueIndex = idx;
+
+      preview.queueIndex = idx >= 0 ? idx : 0;
+      preview.temp = null;
     }
+
     const next = preview.queueIndex + delta;
     if (next < 0 || next >= state.queue.length) return;
+
     preview.queueIndex = next;
-    delete preview.temp;
-    renderPreviewPage();
+    schedulePreviewRender();
   }
 
-
+  /* =========================================================
+     EXPORT PDF
+  ========================================================= */
   async function exportPdf() {
     if (!state.queue.length) {
       alert('กรุณาเลือกอย่างน้อย 1 หน้า');
@@ -679,29 +932,38 @@
 
     try {
       const out = await PDFDocument.create();
-
       const grouped = new Map();
+
       state.queue.forEach((q, orderIndex) => {
         if (!grouped.has(q.fileId)) grouped.set(q.fileId, []);
-        grouped.get(q.fileId).push({ pageIndex: q.pageIndex, orderIndex });
+        grouped.get(q.fileId).push({
+          pageIndex: q.pageIndex,
+          orderIndex
+        });
       });
 
-      const importedByOrder = new Array(state.queue.length);
+      const pagesByOrder = new Array(state.queue.length);
 
       for (const [fileId, requests] of grouped.entries()) {
         const file = state.files.find(f => f.id === fileId);
-        const uniquePages = [...new Set(requests.map(x => x.pageIndex))];
+        if (!file) continue;
 
+        const uniquePages = [...new Set(requests.map(x => x.pageIndex))];
         const pages = await out.copyPages(file.pdfDoc, uniquePages);
         const pageMap = new Map();
-        uniquePages.forEach((pageIndex, i) => pageMap.set(pageIndex, pages[i]));
+
+        uniquePages.forEach((pageIndex, i) => {
+          pageMap.set(pageIndex, pages[i]);
+        });
 
         requests.forEach(req => {
-          importedByOrder[req.orderIndex] = pageMap.get(req.pageIndex);
+          pagesByOrder[req.orderIndex] = pageMap.get(req.pageIndex);
         });
       }
 
-      importedByOrder.forEach(page => out.addPage(page));
+      pagesByOrder.forEach(page => {
+        if (page) out.addPage(page);
+      });
 
       const bytes = await out.save({
         useObjectStreams: true,
@@ -710,8 +972,8 @@
 
       const blob = new Blob([bytes], { type: 'application/pdf' });
       const url = URL.createObjectURL(blob);
-
       const a = document.createElement('a');
+
       a.href = url;
       a.download = filename + '.pdf';
       document.body.appendChild(a);
@@ -723,95 +985,150 @@
       el.exportStatus.textContent =
         `ส่งออกสำเร็จ • ${state.queue.length} หน้า • ${formatBytes(bytes.length)}`;
 
-    } catch (err) {
-      console.error(err);
-      alert('รวม PDF ไม่สำเร็จ\n\n' + (err.message || err));
+    } catch (error) {
+      console.error(error);
+      alert(
+        'รวม PDF ไม่สำเร็จ\n\n' +
+        (error.message || String(error))
+      );
       el.exportStatus.textContent = 'เกิดข้อผิดพลาด';
     } finally {
       el.exportBtn.disabled = false;
     }
   }
 
-  function escapeHtml(text) {
-    return String(text)
-      .replaceAll('&','&amp;')
-      .replaceAll('<','&lt;')
-      .replaceAll('>','&gt;')
-      .replaceAll('"','&quot;')
-      .replaceAll("'","&#039;");
-  }
-
+  /* =========================================================
+     FILE INPUT / DRAG & DROP
+  ========================================================= */
   el.dropzone.addEventListener('click', () => el.fileInput.click());
   el.addMoreBtn.addEventListener('click', () => el.fileInput.click());
-  el.fileInput.addEventListener('change', e => addFiles(e.target.files));
 
-  el.dropzone.addEventListener('dragover', e => {
-    e.preventDefault();
+  el.fileInput.addEventListener('change', event => {
+    addFiles(event.target.files);
+  });
+
+  el.dropzone.addEventListener('dragover', event => {
+    event.preventDefault();
     el.dropzone.classList.add('dragging');
   });
+
   el.dropzone.addEventListener('dragleave', () => {
     el.dropzone.classList.remove('dragging');
   });
-  el.dropzone.addEventListener('drop', e => {
-    e.preventDefault();
+
+  el.dropzone.addEventListener('drop', event => {
+    event.preventDefault();
     el.dropzone.classList.remove('dragging');
-    addFiles(e.dataTransfer.files);
+    addFiles(event.dataTransfer.files);
   });
 
+  /* =========================================================
+     BUTTONS
+  ========================================================= */
   el.selectAllBtn.addEventListener('click', selectAll);
   el.clearAllBtn.addEventListener('click', clearAll);
+
   el.clearFilesBtn.addEventListener('click', () => {
-    if (!state.files.length) return;
-    state.files.length = 0;
+    state.files = [];
     state.queue = [];
+    closePreview();
     render();
   });
+
   el.reverseBtn.addEventListener('click', () => {
     state.queue.reverse();
     renderQueue();
+    if (preview.open) schedulePreviewRender();
   });
+
   el.exportBtn.addEventListener('click', exportPdf);
 
+  /* =========================================================
+     PREVIEW CONTROLS
+  ========================================================= */
+  el.previewCloseBtn.addEventListener('click', closePreview);
+  el.previewPrevBtn.addEventListener('click', () => previewMove(-1));
+  el.previewNextBtn.addEventListener('click', () => previewMove(1));
+  el.zoomInBtn.addEventListener('click', () => changeZoom(5));
+  el.zoomOutBtn.addEventListener('click', () => changeZoom(-5));
+  el.zoomResetBtn.addEventListener('click', resetZoom);
 
-  document.getElementById('zoomInBtn').addEventListener('click', () => changeZoom(0.25));
-  document.getElementById('zoomOutBtn').addEventListener('click', () => changeZoom(-0.25));
-  document.getElementById('zoomResetBtn').addEventListener('click', resetZoom);
+  el.zoomSlider.addEventListener('input', event => {
+    // ซูมแบบอิสระจาก slider โดย render แบบ requestAnimationFrame
+    setZoomFromPercent(event.target.value, true);
+  });
 
+  /* =========================================================
+     MODAL
+  ========================================================= */
+  el.previewModal.addEventListener('click', event => {
+    if (event.target === el.previewModal) closePreview();
+  });
 
-  document.querySelector('.preview-body').addEventListener('wheel', (e) => {
+  /* =========================================================
+     KEYBOARD
+  ========================================================= */
+  document.addEventListener('keydown', event => {
     if (!preview.open) return;
-    if (e.ctrlKey) {
-      e.preventDefault();
-      changeZoom(e.deltaY < 0 ? 0.1 : -0.1);
+
+    if (event.key === 'Escape') {
+      closePreview();
+      return;
     }
+
+    if (event.key === 'ArrowLeft') {
+      previewMove(-1);
+      return;
+    }
+
+    if (event.key === 'ArrowRight') {
+      previewMove(1);
+      return;
+    }
+
+    if (event.key === '+' || event.key === '=') {
+      changeZoom(5);
+      return;
+    }
+
+    if (event.key === '-') {
+      changeZoom(-5);
+      return;
+    }
+
+    if (event.key === '0') {
+      resetZoom();
+    }
+  });
+
+  /* =========================================================
+     CTRL + MOUSE WHEEL = ZOOM
+     ไม่ทำอะไรกับ scroll ปกติ
+  ========================================================= */
+  el.previewBody.addEventListener('wheel', event => {
+    if (!preview.open || !event.ctrlKey) return;
+
+    event.preventDefault();
+    changeZoom(event.deltaY < 0 ? 5 : -5);
   }, { passive: false });
 
-  document.getElementById('zoomInBtn').addEventListener('click', () => changeZoom(0.25));
-  document.getElementById('zoomOutBtn').addEventListener('click', () => changeZoom(-0.25));
-  document.getElementById('zoomResetBtn').addEventListener('click', resetZoom);
-
-  document.getElementById('previewCloseBtn').addEventListener('click', closePreview);
-  document.getElementById('previewPrevBtn').addEventListener('click', () => previewMove(-1));
-  document.getElementById('previewNextBtn').addEventListener('click', () => previewMove(1));
-
-  document.getElementById('previewModal').addEventListener('click', (e) => {
-    if (e.target.id === 'previewModal') closePreview();
-  });
-
-  document.addEventListener('keydown', (e) => {
-    if (!preview.open) return;
-    if (e.key === 'Escape') closePreview();
-    if (e.key === 'ArrowLeft') previewMove(-1);
-    if (e.key === 'ArrowRight') previewMove(1);
-    if (e.key === '+' || e.key === '=') changeZoom(0.25);
-    if (e.key === '-') changeZoom(-0.25);
-    if (e.key === '0') resetZoom();
-  });
-
+  /* =========================================================
+     RESIZE DEBOUNCE
+  ========================================================= */
   window.addEventListener('resize', () => {
-    if (preview.open) renderPreviewPage();
+    if (!preview.open) return;
+
+    clearTimeout(resizeTimer);
+
+    resizeTimer = setTimeout(() => {
+      schedulePreviewRender();
+    }, 180);
   });
 
+  /* =========================================================
+     START
+  ========================================================= */
+  syncZoomUI();
   render();
 </script>
 </body>
